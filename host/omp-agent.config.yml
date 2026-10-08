@@ -178,11 +178,10 @@ modelRoles:
   m_sol: openai-codex/gpt-6.1-sol:max
   m_glm53: zai/glm-5.3:max
   # m_grok: plain pool member, NOT a flagship — the operator classifies grok
-  # below flagship grade. grok-4.20-0309-reasoning carries 2M context and
-  # vision, and like devin's swe family its live catalog row declares no
-  # efforts (thinking: null), so this route carries no effort suffix. The
-  # declared-effort rungs of the family live in its chain.
-  m_grok: xai-oauth/grok-4.20-0309-reasoning
+  # below flagship grade. Both grok-4.20 variants are excluded from routing
+  # (multi-agent and reasoning alike), so the lane sits on grok-4.7 at xhigh,
+  # its top declared effort. The one family step-down lives in its chain.
+  m_grok: xai-oauth/grok-4.7:xhigh
 
 task:
   # Thirty-two concurrent subagents — omp's own default, set explicitly per
@@ -395,11 +394,11 @@ retry:
       - "zai/glm-5:high"
       - "zai/glm-4.7:high"
       - "alibaba-token-plan/glm-5.2:max"
-    # m_grok: family first via grok-4.7 (the only other xai rung the operator
-    # allows routed — grok-4.20-multi-agent is excluded from routing entirely),
-    # then out to codex, zai and the kimi terminal.
+    # m_grok: one family step-down (grok-4.6:high), then out to codex, zai and
+    # the kimi terminal. Both grok-4.20 variants are excluded from routing per
+    # the operator.
     m_grok:
-      - "xai-oauth/grok-4.7:xhigh"
+      - "xai-oauth/grok-4.6:high"
       - "openai-codex/gpt-5.6-luna:medium"
       - "zai/glm-5.3-flash:low"
       - "kimi-code/kimi-for-coding:high"
@@ -462,8 +461,8 @@ retry:
       - "zai/glm-5.1:high"
       - "zai/glm-5:high"
       - "alibaba-token-plan/glm-5.2:max"
-    "xai-oauth/grok-4.20-0309-reasoning":
-      - "xai-oauth/grok-4.7:xhigh"
+    "xai-oauth/grok-4.7:xhigh":
+      - "xai-oauth/grok-4.6:high"
       - "openai-codex/gpt-5.6-luna:medium"
       - "zai/glm-5.3-flash:low"
       - "kimi-code/kimi-for-coding:high"
