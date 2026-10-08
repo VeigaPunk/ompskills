@@ -395,11 +395,10 @@ retry:
       - "zai/glm-5:high"
       - "zai/glm-4.7:high"
       - "alibaba-token-plan/glm-5.2:max"
-    # m_grok: family first — the declared-effort rungs of grok-4.20 and grok-4.7
-    # — then out to codex, zai and the kimi terminal. The 4.20-multi-agent hop
-    # is text-only; it sits behind the primary, which carries vision.
+    # m_grok: family first via grok-4.7 (the only other xai rung the operator
+    # allows routed — grok-4.20-multi-agent is excluded from routing entirely),
+    # then out to codex, zai and the kimi terminal.
     m_grok:
-      - "xai-oauth/grok-4.20-multi-agent-0309:xhigh"
       - "xai-oauth/grok-4.7:xhigh"
       - "openai-codex/gpt-5.6-luna:medium"
       - "zai/glm-5.3-flash:low"
@@ -464,7 +463,6 @@ retry:
       - "zai/glm-5:high"
       - "alibaba-token-plan/glm-5.2:max"
     "xai-oauth/grok-4.20-0309-reasoning":
-      - "xai-oauth/grok-4.20-multi-agent-0309:xhigh"
       - "xai-oauth/grok-4.7:xhigh"
       - "openai-codex/gpt-5.6-luna:medium"
       - "zai/glm-5.3-flash:low"
