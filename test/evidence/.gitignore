@@ -1,0 +1,5 @@
+# Run output, not source: test/run-wave-test.mjs writes one directory per run
+# here (specs, plan, dispatch payload, registry copy, refusal output, wall
+# captures, manifest.json). Keep the directory, ignore everything in it.
+*
+!.gitignore
