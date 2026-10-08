@@ -109,9 +109,10 @@ modelRoles:
   # quota is the scarce one; flash keeps the alibaba-side lanes and the
   # fallbacks below. Effort chosen: medium.
   default: openai-codex/gpt-5.6-luna:medium
-  # smol: cheap current-gen lane that still carries 1M context and vision, so
-  # titles, prewalk and probe work never compact early.
-  smol: alibaba-token-plan/qwen3.6-flash:high
+  # smol: cheap flash lane per the operator — qwen3.6-flash is out of the pool
+  # entirely and the flash bucket runs qwen3.8-flash. Still carries vision, so
+  # titles, prewalk and probe work stay on-model.
+  smol: alibaba-token-plan/qwen3.8-flash:high
   # slow: deep-reasoning lane, 1M context and the deepest output budget on the
   # gateway (384K).
   slow: alibaba-token-plan/deepseek-v4-pro:max
@@ -165,12 +166,12 @@ modelRoles:
   m_composer: cursor/composer-2.5:high
   # m_swe: the named devin lane. The devin-agent api family declares no
   # efforts at all, so this route carries no effort suffix — the same spelling
-  # convention as swe-1-6. Caveat: omp's embedded devin catalog today lists
-  # only swe-1-6 and swe-1-6-fast, and devin auth has not landed in omp yet,
-  # so swe-2 is a pool member under the same policy as every unauthenticated
-  # selector — it becomes a live hop the moment `omp login devin` completes and
-  # the live catalog serves it. Until then m_swe resolves through its chain,
-  # which is exactly the two models omp does know.
+  # convention as swe-1-6. Devin is authenticated in omp now (two accounts,
+  # Max plan) and the live catalog serves swe-2, so this lane is live. Devin
+  # also backs the deepseek/glm-5.3 secondaries across the cascades per the
+  # operator: the devin-hosted twins deepseek-v4-1-flash, deepseek-v4-pro,
+  # glm-5-3-1m and glm-5-3-flash-1m lead the hops of the matching alibaba/zai
+  # primaries. swe stays out of those lanes — it routes only here.
   m_swe: devin/swe-2
   # --- host flagship lanes: the strongest model per authenticated provider,
   # addressable as @m_k3 / @m_sol / @m_glm53 and keyed concretely below ---
@@ -246,36 +247,43 @@ retry:
     default:
       - "openai-codex/gpt-6-luna:high"
       - "alibaba-token-plan/deepseek-v4.1-flash:max"
-      - "zai/glm-5.3-flash:low"
+      - "devin/glm-5-3-flash-1m:low"
       - "kimi-code/kimi-for-coding-highspeed:low"
-    # smol: the cheap and vision-capable end of the pool. The terminal hop is
+    # smol: the cheap and vision-capable end of the pool. qwen3.6-flash is
+    # banned per the operator; the qwen3.8-max hop at :low is the strong-model
+    # cheap rung (xhigh is its top, low its floor). The terminal hop is
     # kimi-for-coding-highspeed at :low rather than :minimal — omp offers
     # minimal on that model, but minimal is not a legal ufo route suffix and
     # this file holds every chain to the seat-grade rule, so low is the floor.
     smol:
-      - "alibaba-token-plan/qwen3.8-flash:medium"
+      - "alibaba-token-plan/qwen3.8-max:low"
       - "alibaba-token-plan/qwen3.7-plus:high"
-      - "zai/glm-5.3-flash:low"
+      - "devin/glm-5-3-flash-1m:low"
       - "zai/glm-5v-turbo:high"
       - "zai/glm-4.6v-flash:high"
       - "kimi-code/kimi-for-coding-highspeed:low"
-    # slow: leave the family immediately. deepseek-v4-pro declares only high
-    # and max, so the only same-model step-down available is :high — and that
-    # repeats the primary's bare model, which the compile gate calls a wrap.
-    # The step is omitted rather than exempted, so this chain is bare-distinct
-    # like every other one in the file. The first hop is the qwen3.8-max
-    # strong lane at its top declared effort (xhigh); the earlier ban that
-    # demoted it is lifted, and the operator classifies qwen3.8-max as strong.
+    # slow: leave the family immediately — but the devin-hosted twin of the
+    # primary leads the secondaries per the operator. deepseek-v4-pro declares
+    # only high and max on alibaba, so the only same-model step-down there is
+    # :high — and that repeats the primary's bare model, which the compile
+    # gate calls a wrap. The step is omitted rather than exempted. First hop
+    # after the devin twin is the qwen3.8-max strong lane at its top declared
+    # effort (xhigh).
     slow:
+      - "devin/deepseek-v4-pro:max"
       - "alibaba-token-plan/qwen3.8-max:xhigh"
       - "alibaba-token-plan/glm-5.2:max"
       - "openai-codex/gpt-5.6-sol:max"
       - "openai-codex/gpt-6.1-sol:max"
       - "zai/glm-5.3:max"
       - "kimi-code/k3:max"
-    # plan: architecture cascade — one deep alibaba hop, then the codex
-    # frontier, then the zai flagship, then the kimi terminal.
+    # plan: architecture cascade — the devin-hosted twin of the deepseek
+    # family leads the secondaries per the operator (devin is the preferred
+    # secondary provider for deepseek and glm-5.3/glm-5.3-flash), then one
+    # deep alibaba hop, the codex frontier, the zai flagship, the kimi
+    # terminal.
     plan:
+      - "devin/deepseek-v4-1-flash:max"
       - "alibaba-token-plan/deepseek-v4-pro:max"
       - "openai-codex/gpt-5.6-terra:max"
       - "zai/glm-5.3:high"
@@ -285,13 +293,13 @@ retry:
     # validates, so each is non-empty, carries pairwise-distinct bare models,
     # and never repeats its own primary at another effort ---
     # m_strong: primary alibaba-token-plan/deepseek-v4.1-flash:max. The first
-    # hop is the qwen3.8-max strong lane — the operator lifted the earlier
-    # quota ban and classifies qwen3.8-max as a strong model, so it leads the
-    # cascade (it cannot be the primary while its top declared effort is
-    # xhigh and the primary runs :max). The google-antigravity hop is a pool
-    # member that costs one provider error until that OAuth login happens; it
-    # sits behind six authenticated hops.
+    # secondary is the devin-hosted twin of the family per the operator, then
+    # the qwen3.8-max strong lane the operator brought back, then the rest of
+    # the authenticated cascade. The google-antigravity hop costs one provider
+    # error until that OAuth login happens; it sits behind seven
+    # authenticated hops.
     m_strong:
+      - "devin/deepseek-v4-1-flash:max"
       - "alibaba-token-plan/qwen3.8-max:xhigh"
       - "alibaba-token-plan/deepseek-v4-pro:max"
       - "alibaba-token-plan/glm-5.2:max"
@@ -301,7 +309,8 @@ retry:
       - "google-antigravity/claude-opus-5-5:high"
       - "kimi-code/k3:max"
     # m_qwen38max: primary alibaba-token-plan/qwen3.8-max:xhigh — the named
-    # strong-class lane. Same cascade shape as m_strong minus the self hop.
+    # strong-class lane. Same cascade shape as m_strong minus the self hop and
+    # the devin hop (the operator scoped devin to the deepseek/zai primaries).
     m_qwen38max:
       - "alibaba-token-plan/deepseek-v4-pro:max"
       - "alibaba-token-plan/glm-5.2:max"
@@ -315,14 +324,15 @@ retry:
       - "alibaba-token-plan/qwen3.7-plus:high"
       - "alibaba-token-plan/glm-5.2:high"
       - "openai-codex/gpt-5.6-luna:medium"
-      - "zai/glm-5.3-flash:high"
+      - "devin/glm-5-3-flash-1m:high"
       - "cursor/composer-2.5:high"
       - "kimi-code/kimi-for-coding:high"
-    # m_fast: primary alibaba-token-plan/deepseek-v4.1-flash:max.
+    # m_fast: primary alibaba-token-plan/deepseek-v4.1-flash:max. The first
+    # secondary is the devin-hosted twin of the family per the operator.
     m_fast:
-      - "alibaba-token-plan/qwen3.6-flash:high"
-      - "alibaba-token-plan/qwen3.8-flash:low"
-      - "zai/glm-5.3-flash:low"
+      - "devin/deepseek-v4-1-flash:max"
+      - "alibaba-token-plan/qwen3.8-flash:high"
+      - "devin/glm-5-3-flash-1m:low"
       - "zai/glm-4.7-flash:medium"
       - "openai-codex/gpt-5.6-luna:low"
       - "kimi-code/kimi-for-coding-highspeed:low"
@@ -331,7 +341,7 @@ retry:
     m_luna:
       - "openai-codex/gpt-6-luna:high"
       - "alibaba-token-plan/deepseek-v4.1-flash:max"
-      - "zai/glm-5.3-flash:low"
+      - "devin/glm-5-3-flash-1m:low"
       - "kimi-code/kimi-for-coding-highspeed:low"
 
     # --- effort-variant chains: each reuses its bucket's hop sequence
@@ -345,20 +355,22 @@ retry:
       - "alibaba-token-plan/qwen3.7-plus:high"
       - "alibaba-token-plan/glm-5.2:high"
       - "openai-codex/gpt-5.6-luna:medium"
-      - "zai/glm-5.3-flash:high"
+      - "devin/glm-5-3-flash-1m:high"
       - "cursor/composer-2.5:high"
       - "kimi-code/kimi-for-coding:high"
     m_mid_low:
       - "alibaba-token-plan/qwen3.7-plus:high"
       - "alibaba-token-plan/glm-5.2:high"
       - "openai-codex/gpt-5.6-luna:medium"
-      - "zai/glm-5.3-flash:high"
+      - "devin/glm-5-3-flash-1m:high"
       - "cursor/composer-2.5:high"
       - "kimi-code/kimi-for-coding:high"
+    # m_fast_high: variant chain reuses the m_fast hop sequence byte-for-byte,
+    # devin twin included.
     m_fast_high:
-      - "alibaba-token-plan/qwen3.6-flash:high"
-      - "alibaba-token-plan/qwen3.8-flash:low"
-      - "zai/glm-5.3-flash:low"
+      - "devin/deepseek-v4-1-flash:max"
+      - "alibaba-token-plan/qwen3.8-flash:high"
+      - "devin/glm-5-3-flash-1m:low"
       - "zai/glm-4.7-flash:medium"
       - "openai-codex/gpt-5.6-luna:low"
       - "kimi-code/kimi-for-coding-highspeed:low"
@@ -389,6 +401,7 @@ retry:
       - "openai-codex/gpt-5.6-sol:max"
       - "openai-codex/gpt-daybreak-blue-latest:max"
     m_glm53:
+      - "devin/glm-5-3-1m:max"
       - "zai/glm-5.2:max"
       - "zai/glm-5.1:high"
       - "zai/glm-5:high"
@@ -400,7 +413,7 @@ retry:
     m_grok:
       - "xai-oauth/grok-4.6:high"
       - "openai-codex/gpt-5.6-luna:medium"
-      - "zai/glm-5.3-flash:low"
+      - "devin/glm-5-3-flash-1m:low"
       - "kimi-code/kimi-for-coding:high"
 
     # --- host flagship lanes, keyed by concrete selector so the cascade
@@ -417,23 +430,21 @@ retry:
     "alibaba-token-plan/qwen3.8-flash:high":
       - "alibaba-token-plan/qwen3.7-plus:high"
       - "openai-codex/gpt-5.6-luna:medium"
-      - "zai/glm-5.3-flash:high"
+      - "devin/glm-5-3-flash-1m:high"
       - "kimi-code/kimi-for-coding:high"
     "alibaba-token-plan/deepseek-v4.1-flash:max":
-      - "alibaba-token-plan/qwen3.6-flash:high"
-      - "zai/glm-5.3-flash:low"
+      - "devin/deepseek-v4-1-flash:max"
+      - "alibaba-token-plan/qwen3.8-flash:high"
+      - "devin/glm-5-3-flash-1m:low"
       - "openai-codex/gpt-5.6-luna:low"
       - "kimi-code/kimi-for-coding-highspeed:low"
     "openai-codex/gpt-5.6-luna:medium":
       - "openai-codex/gpt-6-luna:high"
       - "alibaba-token-plan/deepseek-v4.1-flash:max"
-      - "zai/glm-5.3-flash:low"
-      - "kimi-code/kimi-for-coding-highspeed:low"
-    "alibaba-token-plan/qwen3.6-flash:high":
-      - "alibaba-token-plan/qwen3.7-plus:high"
-      - "zai/glm-5.3-flash:low"
+      - "devin/glm-5-3-flash-1m:low"
       - "kimi-code/kimi-for-coding-highspeed:low"
     "alibaba-token-plan/deepseek-v4-pro:max":
+      - "devin/deepseek-v4-pro:max"
       - "alibaba-token-plan/glm-5.2:max"
       - "openai-codex/gpt-5.6-sol:max"
       - "zai/glm-5.3:max"
@@ -457,6 +468,7 @@ retry:
       - "openai-codex/gpt-6-astra:max"
       - "openai-codex/gpt-5.6-sol:max"
     "zai/glm-5.3:max":
+      - "devin/glm-5-3-1m:max"
       - "zai/glm-5.2:max"
       - "zai/glm-5.1:high"
       - "zai/glm-5:high"
@@ -464,7 +476,7 @@ retry:
     "xai-oauth/grok-4.7:xhigh":
       - "xai-oauth/grok-4.6:high"
       - "openai-codex/gpt-5.6-luna:medium"
-      - "zai/glm-5.3-flash:low"
+      - "devin/glm-5-3-flash-1m:low"
       - "kimi-code/kimi-for-coding:high"
     "alibaba-token-plan/qwen3.8-max:xhigh":
       - "alibaba-token-plan/deepseek-v4-pro:max"
