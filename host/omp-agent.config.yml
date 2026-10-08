@@ -41,9 +41,11 @@
 # both are allowlist filters, and filling them with unauthenticated selectors
 # would hide working models.
 #
-# stepfun and opencode-go appear nowhere: the operator excluded them. kimi-code
-# appears only as a terminal fallback hop and never as a seat primary — it is
-# the declared secondary, and its monthly budget is the one being protected.
+# The two providers the operator excluded are deliberately absent from this
+# file — no route and no comment names either one, so a grep for them comes
+# back empty. kimi-code appears only as a terminal fallback hop and never as a
+# seat primary: it is the declared secondary, and its monthly budget is the one
+# being protected.
 #
 # Deliberate limitation, not an oversight: the operator holds three separate
 # alibaba token-plan credentials, but omp's provider table has exactly ONE id,
