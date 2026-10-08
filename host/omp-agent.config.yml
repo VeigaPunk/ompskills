@@ -103,11 +103,12 @@ extendedContext: true
 
 modelRoles:
   # --- omp role selectors ---
-  # default: the fast bucket. Operator quota directive (2026-10-08): the
-  # previous strong-bucket default (qwen3.8-max:xhigh) burned the token-plan
-  # quota too fast, so every primary that rode it now rides
-  # deepseek-v4.1-flash:max; qwen3.8-max keeps NO routes anywhere in this file.
-  default: alibaba-token-plan/deepseek-v4.1-flash:max
+  # default: the m_luna lane (openai-codex gpt-5.6-luna:medium) — operator
+  # directive picked m_luna over deepseek-v4.1 for the everyday default
+  # because codex carries ~99% headroom on this host while the token-plan
+  # quota is the scarce one; flash keeps the alibaba-side lanes and the
+  # fallbacks below. Effort chosen: medium.
+  default: openai-codex/gpt-5.6-luna:medium
   # smol: cheap current-gen lane that still carries 1M context and vision, so
   # titles, prewalk and probe work never compact early.
   smol: alibaba-token-plan/qwen3.6-flash:high
@@ -141,6 +142,10 @@ modelRoles:
   # lower rung.
   m_fast_high: alibaba-token-plan/deepseek-v4.1-flash:high
   # --- pool members no seat currently consumes ---
+  # m_luna: the default role's lane, addressable as @m_luna for fleet specs
+  # and L1 selection. openai-codex gpt-5.6-luna carries 1M context at medium
+  # effort; the low and high rungs live in its chain.
+  m_luna: openai-codex/gpt-5.6-luna:medium
   # m_antigravity: the gemini ban's one exemption and the connector seat's
   # historical family. google-antigravity is not authenticated on this host, so
   # connector runs on @m_mid instead; the alias and its chain stay declared so
@@ -220,18 +225,16 @@ retry:
   modelFallback: true
   fallbackChains:
     # --- omp roles ---
-    # default: down the alibaba strong family, then out to the two providers
-    # with the deepest headroom on this host (openai-codex at 99% of its
-    # 7-day window free, zai essentially untouched), then the shared terminal
-    # hop. No preview lane: qwen3.8-max-preview is absent from the live
-    # catalog, so this chain starts one hop deeper than the design draft did.
+    # default: the primary is codex luna, so the cascade stays in the codex
+    # family first, steps to the token-plan quota lane, then zai, then the
+    # kimi terminal. No preview lane: qwen3.8-max-preview is absent from the
+    # live catalog, so this chain starts one hop deeper than the design
+    # draft did.
     default:
-      - "alibaba-token-plan/deepseek-v4-pro:max"
-      - "openai-codex/gpt-6.1-sol:max"
       - "openai-codex/gpt-6-luna:high"
-      - "zai/glm-5.3:max"
-      - "kimi-code/k3:max"
-      - "kimi-code/kimi-for-coding:high"
+      - "alibaba-token-plan/deepseek-v4.1-flash:max"
+      - "zai/glm-5.3-flash:low"
+      - "kimi-code/kimi-for-coding-highspeed:low"
     # smol: the cheap and vision-capable end of the pool. The terminal hop is
     # kimi-for-coding-highspeed at :low rather than :minimal — omp offers
     # minimal on that model, but minimal is not a legal ufo route suffix and
@@ -293,6 +296,13 @@ retry:
       - "zai/glm-5.3-flash:low"
       - "zai/glm-4.7-flash:medium"
       - "openai-codex/gpt-5.6-luna:low"
+      - "kimi-code/kimi-for-coding-highspeed:low"
+    # m_luna: primary openai-codex/gpt-5.6-luna:medium — codex family first,
+    # then the token-plan quota lane, then zai, then the kimi terminal.
+    m_luna:
+      - "openai-codex/gpt-6-luna:high"
+      - "alibaba-token-plan/deepseek-v4.1-flash:max"
+      - "zai/glm-5.3-flash:low"
       - "kimi-code/kimi-for-coding-highspeed:low"
 
     # --- effort-variant chains: each reuses its bucket's hop sequence
@@ -376,6 +386,11 @@ retry:
       - "alibaba-token-plan/qwen3.6-flash:high"
       - "zai/glm-5.3-flash:low"
       - "openai-codex/gpt-5.6-luna:low"
+      - "kimi-code/kimi-for-coding-highspeed:low"
+    "openai-codex/gpt-5.6-luna:medium":
+      - "openai-codex/gpt-6-luna:high"
+      - "alibaba-token-plan/deepseek-v4.1-flash:max"
+      - "zai/glm-5.3-flash:low"
       - "kimi-code/kimi-for-coding-highspeed:low"
     "alibaba-token-plan/qwen3.6-flash:high":
       - "alibaba-token-plan/qwen3.7-plus:high"
