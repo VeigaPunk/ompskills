@@ -119,12 +119,20 @@ modelRoles:
   # quota directive.
   plan: alibaba-token-plan/deepseek-v4.1-flash:max
   # --- the three ufo buckets, referenced as @name from agentModelOverrides ---
-  # m_strong: the L1, the planner and the critic. NOTE: the 1M-context
-  # declaration comes from the kimi-code-side catalog; omp's live row for
-  # deepseek-v4.1-flash is sparse (no context metadata), so the l1Context
-  # floor is unverifiable from omp — accepted under the quota directive, the
-  # same class of gap as the previous 872K L1 that no gate caught.
+  # m_strong: the L1, the planner and the critic. Primary is
+  # deepseek-v4.1-flash:max; the qwen3.8-max strong lane (m_qwen38max, below)
+  # leads its cascade. NOTE: the 1M-context declaration for deepseek-v4.1-flash
+  # comes from the kimi-code-side catalog; omp's live row is sparse (no context
+  # metadata), so the l1Context floor is unverifiable from omp — the same
+  # class of gap as the previous 872K L1 that no gate caught.
   m_strong: alibaba-token-plan/deepseek-v4.1-flash:max
+  # m_qwen38max: the named strong-class lane for qwen3.8-max, back in the pool
+  # per the operator (the earlier quota ban is lifted). The live catalog
+  # declares efforts low,medium,xhigh — there is no :max rung, so xhigh is the
+  # top of this lane. Seats stay on @m_strong; this lane is addressable as
+  # @m_qwen38max for fleet specs and L1 selection, and it leads the m_strong
+  # cascade.
+  m_qwen38max: alibaba-token-plan/qwen3.8-max:xhigh
   # m_mid: general implementation, review, watch and execute. high is the
   # ceiling omp's live catalog declares for qwen3.8-flash.
   m_mid: alibaba-token-plan/qwen3.8-flash:high
@@ -169,6 +177,12 @@ modelRoles:
   m_k3: kimi-code/k3:max
   m_sol: openai-codex/gpt-6.1-sol:max
   m_glm53: zai/glm-5.3:max
+  # m_grok: plain pool member, NOT a flagship — the operator classifies grok
+  # below flagship grade. grok-4.20-0309-reasoning carries 2M context and
+  # vision, and like devin's swe family its live catalog row declares no
+  # efforts (thinking: null), so this route carries no effort suffix. The
+  # declared-effort rungs of the family live in its chain.
+  m_grok: xai-oauth/grok-4.20-0309-reasoning
 
 task:
   # Thirty-two concurrent subagents — omp's own default, set explicitly per
@@ -250,9 +264,11 @@ retry:
     # and max, so the only same-model step-down available is :high — and that
     # repeats the primary's bare model, which the compile gate calls a wrap.
     # The step is omitted rather than exempted, so this chain is bare-distinct
-    # like every other one in the file. The first hop is glm-5.2:max rather
-    # than qwen3.8-max per the operator quota directive.
+    # like every other one in the file. The first hop is the qwen3.8-max
+    # strong lane at its top declared effort (xhigh); the earlier ban that
+    # demoted it is lifted, and the operator classifies qwen3.8-max as strong.
     slow:
+      - "alibaba-token-plan/qwen3.8-max:xhigh"
       - "alibaba-token-plan/glm-5.2:max"
       - "openai-codex/gpt-5.6-sol:max"
       - "openai-codex/gpt-6.1-sol:max"
@@ -269,11 +285,25 @@ retry:
     # --- ufo seat bucket chains: these three are the ones the compile gate
     # validates, so each is non-empty, carries pairwise-distinct bare models,
     # and never repeats its own primary at another effort ---
-    # m_strong: primary alibaba-token-plan/deepseek-v4.1-flash:max (operator
-    # quota directive moved it off qwen3.8-max). The google-antigravity hop is
-    # a pool member that costs one provider error until that OAuth login
-    # happens; it sits behind five authenticated hops.
+    # m_strong: primary alibaba-token-plan/deepseek-v4.1-flash:max. The first
+    # hop is the qwen3.8-max strong lane — the operator lifted the earlier
+    # quota ban and classifies qwen3.8-max as a strong model, so it leads the
+    # cascade (it cannot be the primary while its top declared effort is
+    # xhigh and the primary runs :max). The google-antigravity hop is a pool
+    # member that costs one provider error until that OAuth login happens; it
+    # sits behind six authenticated hops.
     m_strong:
+      - "alibaba-token-plan/qwen3.8-max:xhigh"
+      - "alibaba-token-plan/deepseek-v4-pro:max"
+      - "alibaba-token-plan/glm-5.2:max"
+      - "openai-codex/gpt-5.6-sol:max"
+      - "openai-codex/gpt-5.6-terra:max"
+      - "zai/glm-5.3:max"
+      - "google-antigravity/claude-opus-5-5:high"
+      - "kimi-code/k3:max"
+    # m_qwen38max: primary alibaba-token-plan/qwen3.8-max:xhigh — the named
+    # strong-class lane. Same cascade shape as m_strong minus the self hop.
+    m_qwen38max:
       - "alibaba-token-plan/deepseek-v4-pro:max"
       - "alibaba-token-plan/glm-5.2:max"
       - "openai-codex/gpt-5.6-sol:max"
@@ -309,9 +339,9 @@ retry:
     # byte-for-byte. Only the primary's effort differs, so a variant stays
     # compile-legal even if a future seat pins to one: the primary's bare
     # model still collides with none of the hops. The strong bucket has no
-    # variant chains since the quota directive moved it onto
-    # deepseek-v4.1-flash, whose only lower rung (:high) already exists as
-    # m_fast_high ---
+    # variant chains: deepseek-v4.1-flash's only lower rung (:high) already
+    # exists as m_fast_high, and the m_qwen38max lane covers the strong class
+    # at its top effort. ---
     m_mid_med:
       - "alibaba-token-plan/qwen3.7-plus:high"
       - "alibaba-token-plan/glm-5.2:high"
@@ -365,6 +395,15 @@ retry:
       - "zai/glm-5:high"
       - "zai/glm-4.7:high"
       - "alibaba-token-plan/glm-5.2:max"
+    # m_grok: family first — the declared-effort rungs of grok-4.20 and grok-4.7
+    # — then out to codex, zai and the kimi terminal. The 4.20-multi-agent hop
+    # is text-only; it sits behind the primary, which carries vision.
+    m_grok:
+      - "xai-oauth/grok-4.20-multi-agent-0309:xhigh"
+      - "xai-oauth/grok-4.7:xhigh"
+      - "openai-codex/gpt-5.6-luna:medium"
+      - "zai/glm-5.3-flash:low"
+      - "kimi-code/kimi-for-coding:high"
 
     # --- host flagship lanes, keyed by concrete selector so the cascade
     # applies whether the model was picked as @m_k3 or by name. Each of these
@@ -424,6 +463,20 @@ retry:
       - "zai/glm-5.1:high"
       - "zai/glm-5:high"
       - "alibaba-token-plan/glm-5.2:max"
+    "xai-oauth/grok-4.20-0309-reasoning":
+      - "xai-oauth/grok-4.20-multi-agent-0309:xhigh"
+      - "xai-oauth/grok-4.7:xhigh"
+      - "openai-codex/gpt-5.6-luna:medium"
+      - "zai/glm-5.3-flash:low"
+      - "kimi-code/kimi-for-coding:high"
+    "alibaba-token-plan/qwen3.8-max:xhigh":
+      - "alibaba-token-plan/deepseek-v4-pro:max"
+      - "alibaba-token-plan/glm-5.2:max"
+      - "openai-codex/gpt-5.6-sol:max"
+      - "openai-codex/gpt-5.6-terra:max"
+      - "zai/glm-5.3:max"
+      - "google-antigravity/claude-opus-5-5:high"
+      - "kimi-code/k3:max"
 
 dev:
   autoqaConsent: granted
