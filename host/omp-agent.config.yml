@@ -78,19 +78,19 @@
 # The two intentionally differ: the alias chain is the ufo seat cascade, the
 # concrete chain is omp's own retry cascade.
 #
-# Effort is granular per bucket via variant aliases (m_strong_med,
-# m_strong_low, m_mid_med, m_mid_low, m_fast_high); the L1 picks the variant
-# per mission/round/wave. Seat pins use the default-effort bucket alias.
-# A variant names the same model as its bucket at a lower declared effort and
-# reuses the bucket's hop sequence byte-for-byte — the hops are capacity
-# fallbacks, so their efforts do not move with the primary's. Variants carry
-# alias-level chains only: nothing requires every modelRoles value to also own
-# a concrete-selector chain key, only that every declared chain key resolves,
-# so the variants stay lean. The effort each variant names is a real one in
-# omp's live catalog AND a legal ufo route suffix — which excludes `minimal`
-# outright and excludes `high` on qwen3.8-max, whose live efforts are
-# low,medium,xhigh. That is why the strong bucket has two variants and the fast
-# bucket only one.
+# Effort is granular per bucket via variant aliases (m_mid_med, m_mid_low,
+# m_fast_high); the L1 picks the variant per mission/round/wave. Seat pins use
+# the default-effort bucket alias. A variant names the same model as its bucket
+# at a lower declared effort and reuses the bucket's hop sequence byte-for-byte
+# — the hops are capacity fallbacks, so their efforts do not move with the
+# primary's. Variants carry alias-level chains only: nothing requires every
+# modelRoles value to also own a concrete-selector chain key, only that every
+# declared chain key resolves, so the variants stay lean. The effort each
+# variant names is a real one in omp's live catalog AND a legal ufo route
+# suffix — which excludes `minimal` outright. The strong bucket deliberately
+# carries NO variants: the operator quota directive routes it onto
+# deepseek-v4.1-flash, whose live efforts are only high,max, so its only lower
+# rung (:high) already exists as m_fast_high.
 #
 # No key material belongs in this file. The resolver screens every line and key
 # it echoes into an error message and redacts anything credential-shaped; the
@@ -103,23 +103,27 @@ extendedContext: true
 
 modelRoles:
   # --- omp role selectors ---
-  # default: the strong bucket. qwen3.8-max tops out at xhigh — high and max
-  # are not valid efforts on it, so xhigh is the ceiling and not a typo.
-  default: alibaba-token-plan/qwen3.8-max:xhigh
+  # default: the fast bucket. Operator quota directive (2026-10-08): the
+  # previous strong-bucket default (qwen3.8-max:xhigh) burned the token-plan
+  # quota too fast, so every primary that rode it now rides
+  # deepseek-v4.1-flash:max; qwen3.8-max keeps NO routes anywhere in this file.
+  default: alibaba-token-plan/deepseek-v4.1-flash:max
   # smol: cheap current-gen lane that still carries 1M context and vision, so
   # titles, prewalk and probe work never compact early.
   smol: alibaba-token-plan/qwen3.6-flash:high
   # slow: deep-reasoning lane, 1M context and the deepest output budget on the
   # gateway (384K).
   slow: alibaba-token-plan/deepseek-v4-pro:max
-  # plan: architecture and planning, same 1M route as default.
-  plan: alibaba-token-plan/qwen3.8-max:xhigh
+  # plan: architecture and planning — same flash route as default per the
+  # quota directive.
+  plan: alibaba-token-plan/deepseek-v4.1-flash:max
   # --- the three ufo buckets, referenced as @name from agentModelOverrides ---
-  # m_strong: 1M-context deep reasoning — the L1, the planner and the critic.
-  # A genuine 1M route, which is what nativeProfiles.omp-native-v1.l1Context
-  # declares as the floor; the previous L1 lane was 872K against that same
-  # declared floor and no gate caught the shortfall.
-  m_strong: alibaba-token-plan/qwen3.8-max:xhigh
+  # m_strong: the L1, the planner and the critic. NOTE: the 1M-context
+  # declaration comes from the kimi-code-side catalog; omp's live row for
+  # deepseek-v4.1-flash is sparse (no context metadata), so the l1Context
+  # floor is unverifiable from omp — accepted under the quota directive, the
+  # same class of gap as the previous 872K L1 that no gate caught.
+  m_strong: alibaba-token-plan/deepseek-v4.1-flash:max
   # m_mid: general implementation, review, watch and execute. high is the
   # ceiling omp's live catalog declares for qwen3.8-flash.
   m_mid: alibaba-token-plan/qwen3.8-flash:high
@@ -128,9 +132,6 @@ modelRoles:
   # --- effort variants of the three buckets: same model, lower declared
   # effort, identical hop sequence. No seat pins to these; the L1 selects one
   # per mission/round/wave, which is the granularity mechanism ---
-  # qwen3.8-max live efforts are low,medium,xhigh — there is no high variant.
-  m_strong_med: alibaba-token-plan/qwen3.8-max:medium
-  m_strong_low: alibaba-token-plan/qwen3.8-max:low
   # qwen3.8-flash live efforts are minimal,low,medium,high. minimal is not a
   # legal ufo route suffix, so low is the floor variant and there is no
   # m_mid_min.
@@ -246,9 +247,10 @@ retry:
     # and max, so the only same-model step-down available is :high — and that
     # repeats the primary's bare model, which the compile gate calls a wrap.
     # The step is omitted rather than exempted, so this chain is bare-distinct
-    # like every other one in the file.
+    # like every other one in the file. The first hop is glm-5.2:max rather
+    # than qwen3.8-max per the operator quota directive.
     slow:
-      - "alibaba-token-plan/qwen3.8-max:xhigh"
+      - "alibaba-token-plan/glm-5.2:max"
       - "openai-codex/gpt-5.6-sol:max"
       - "openai-codex/gpt-6.1-sol:max"
       - "zai/glm-5.3:max"
@@ -264,9 +266,10 @@ retry:
     # --- ufo seat bucket chains: these three are the ones the compile gate
     # validates, so each is non-empty, carries pairwise-distinct bare models,
     # and never repeats its own primary at another effort ---
-    # m_strong: primary alibaba-token-plan/qwen3.8-max:xhigh. The
-    # google-antigravity hop is a pool member that costs one provider error
-    # until that OAuth login happens; it sits behind five authenticated hops.
+    # m_strong: primary alibaba-token-plan/deepseek-v4.1-flash:max (operator
+    # quota directive moved it off qwen3.8-max). The google-antigravity hop is
+    # a pool member that costs one provider error until that OAuth login
+    # happens; it sits behind five authenticated hops.
     m_strong:
       - "alibaba-token-plan/deepseek-v4-pro:max"
       - "alibaba-token-plan/glm-5.2:max"
@@ -295,23 +298,10 @@ retry:
     # --- effort-variant chains: each reuses its bucket's hop sequence
     # byte-for-byte. Only the primary's effort differs, so a variant stays
     # compile-legal even if a future seat pins to one: the primary's bare
-    # model still collides with none of the hops ---
-    m_strong_med:
-      - "alibaba-token-plan/deepseek-v4-pro:max"
-      - "alibaba-token-plan/glm-5.2:max"
-      - "openai-codex/gpt-5.6-sol:max"
-      - "openai-codex/gpt-5.6-terra:max"
-      - "zai/glm-5.3:max"
-      - "google-antigravity/claude-opus-5-5:high"
-      - "kimi-code/k3:max"
-    m_strong_low:
-      - "alibaba-token-plan/deepseek-v4-pro:max"
-      - "alibaba-token-plan/glm-5.2:max"
-      - "openai-codex/gpt-5.6-sol:max"
-      - "openai-codex/gpt-5.6-terra:max"
-      - "zai/glm-5.3:max"
-      - "google-antigravity/claude-opus-5-5:high"
-      - "kimi-code/k3:max"
+    # model still collides with none of the hops. The strong bucket has no
+    # variant chains since the quota directive moved it onto
+    # deepseek-v4.1-flash, whose only lower rung (:high) already exists as
+    # m_fast_high ---
     m_mid_med:
       - "alibaba-token-plan/qwen3.7-plus:high"
       - "alibaba-token-plan/glm-5.2:high"
@@ -368,18 +358,15 @@ retry:
 
     # --- host flagship lanes, keyed by concrete selector so the cascade
     # applies whether the model was picked as @m_k3 or by name. Each of these
-    # eleven keys is byte-for-byte one of the eleven distinct non-variant
-    # modelRoles values above, which is what keeps the dead-weight rule
-    # satisfied: change an effort suffix in modelRoles and the matching key
-    # here must change identically or the whole file fails to load. The five
-    # effort-variant values deliberately have NO concrete key — the rule
-    # constrains declared chain keys, not modelRoles values, so omitting them
-    # keeps the file lean without making anything dead weight ---
-    "alibaba-token-plan/qwen3.8-max:xhigh":
-      - "alibaba-token-plan/deepseek-v4-pro:max"
-      - "openai-codex/gpt-5.6-sol:max"
-      - "zai/glm-5.3:max"
-      - "kimi-code/k3:max"
+    # keys is byte-for-byte one of the distinct non-variant modelRoles values
+    # above, which is what keeps the dead-weight rule satisfied: change an
+    # effort suffix in modelRoles and the matching key here must change
+    # identically or the whole file fails to load. The three effort-variant
+    # values deliberately have NO concrete key — the rule constrains declared
+    # chain keys, not modelRoles values, so omitting them keeps the file lean
+    # without making anything dead weight. Four aliases (default, plan,
+    # m_strong and m_fast) share the deepseek-v4.1-flash:max value after the
+    # quota directive, so one concrete key serves all four ---
     "alibaba-token-plan/qwen3.8-flash:high":
       - "alibaba-token-plan/qwen3.7-plus:high"
       - "openai-codex/gpt-5.6-luna:medium"
@@ -395,7 +382,7 @@ retry:
       - "zai/glm-5.3-flash:low"
       - "kimi-code/kimi-for-coding-highspeed:low"
     "alibaba-token-plan/deepseek-v4-pro:max":
-      - "alibaba-token-plan/qwen3.8-max:xhigh"
+      - "alibaba-token-plan/glm-5.2:max"
       - "openai-codex/gpt-5.6-sol:max"
       - "zai/glm-5.3:max"
       - "kimi-code/k3:max"
