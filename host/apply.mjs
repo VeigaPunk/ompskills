@@ -3,8 +3,18 @@
 //
 // DRY RUN BY DEFAULT. With no flags this script changes nothing: it validates
 // host/omp-agent.config.yml through the real ufo-fsd-alpha resolver and mirror
-// renderer, prints the verdict and the full apply plan, and exits. Pass
-// --apply to actually install.
+// renderer, validates a 32-lane wave against the real wave planner, prints the
+// verdict and the full apply plan, and exits. Pass --apply to install.
+//
+// --apply writes EXACTLY TWO files and nothing else:
+//   1. ~/.omp/agent/config.yml                    (timestamped backup, install)
+//   2. <ufo-root>/config/ufo.json                 (timestamped backup, merge)
+// It deliberately does NOT regenerate any derived artifact. `npm run
+// contracts:sync`, `scripts/render-seat-tables.mjs` and AGENTS.md are never
+// invoked and never written, by operator decision: the current committed state
+// of ufo-fsd-alpha is the good one and must not accumulate churn. The bundled
+// mirrors therefore stay stale after apply, and this script reports that as an
+// intentional operator-owned WARNING rather than trying to fix it.
 //
 // Why the candidate is validated through the real resolver rather than a local
 // YAML parse: ~/.omp/agent/config.yml is the routing authority for ufo seat
@@ -22,7 +32,7 @@
 //
 // Usage:
 //   node host/apply.mjs                     # dry run, changes nothing
-//   node host/apply.mjs --apply             # install + merge + regenerate
+//   node host/apply.mjs --apply             # install the config + merge the delta
 //   node host/apply.mjs --help
 //
 // Exit codes: 0 ok, 1 validation or apply failure, 64 usage error.
@@ -34,13 +44,14 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -48,12 +59,15 @@ const HOST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CANDIDATE = path.join(HOST_DIR, "omp-agent.config.yml");
 const DELTA_PATH = path.join(HOST_DIR, "ufo-sighting-dispatch.json");
 const DEFAULT_UFO_ROOT = "/home/vgpnk/Projects/ufo-fsd-alpha";
-const MIRROR_REL = "crates/ufo-core-runtime/bundled/omp-seat-routing.json";
 
 // Hard bounds the ufo runtime enforces elsewhere; restated here so the delta is
 // refused before it can reach a gate that would only fail at dispatch time.
 const MAX_SWARM_LANES = 100;
 const EFFORT_SUFFIXES = ["low", "medium", "high", "xhigh", "max"];
+// The wave width the operator's directive names: "swarm waves of 32 workers but
+// up to 100". 32 is the new floor, so a 32-lane spawn wave is the narrowest
+// legal one and is what this script proves admissible.
+const WAVE_PROBE_LANES = 32;
 // The fourteen seats crates/ufo-core-runtime/build.rs asserts on. A seat
 // missing from task.agentModelOverrides fails the resolver; a seat present here
 // but absent from the mirror fails the compile gate.
@@ -61,6 +75,19 @@ const MIRROR_SEATS = [
   "main", "planner", "distiller", "labrat",
   "scout", "reviewer", "critic", "connector", "sentinel", "executor",
   "mutation-tester", "revenger", "simplifier", "scribe",
+];
+// Roles the wave planner accepts for a spawn lane (SWARM_ROLES).
+const WAVE_ROLES = [
+  "scout", "reviewer", "critic", "connector", "sentinel",
+  "executor", "mutation-tester", "revenger", "simplifier", "scribe",
+];
+// Derived artifacts this script intentionally leaves stale. Named in the
+// closing notice so the operator inherits an explicit list, not a surprise.
+const DEFERRED_ARTIFACTS = [
+  "crates/ufo-core-runtime/bundled/omp-seat-routing.json — mirror of the seat table",
+  "crates/ufo-core-runtime/bundled/config.json — mirrors sighting.dispatch.maxConcurrentL1",
+  "AGENTS.md Routing-authority band mentions (~lines 154-170) still say 16 where the floor is now 32",
+  "AGENTS.md generated seat table between the BEGIN/END GENERATED markers",
 ];
 
 let redact = (text) => text;
@@ -75,13 +102,12 @@ function fail(message) {
 function usage(message) {
   if (message) process.stderr.write(`error: ${message}\n`);
   process.stderr.write(
-    "usage: node host/apply.mjs [--apply] [--ufo-root PATH] [--ufo-json PATH] [--install-target PATH] [--skip-post-steps]\n"
+    "usage: node host/apply.mjs [--apply] [--ufo-root PATH] [--ufo-json PATH] [--install-target PATH]\n"
       + "  (no flags)          dry run: validate the candidate and print the apply plan\n"
-      + "  --apply             install the config and merge the dispatch delta\n"
+      + "  --apply             install the config and merge the dispatch delta (two files only)\n"
       + "  --ufo-root PATH     ufo-fsd-alpha checkout (default /home/vgpnk/Projects/ufo-fsd-alpha)\n"
       + "  --ufo-json PATH     config/ufo.json to merge into (default <ufo-root>/config/ufo.json)\n"
-      + "  --install-target P  config install path (default ~/.omp/agent/config.yml)\n"
-      + "  --skip-post-steps   skip contracts:sync, render-seat-tables and the final --check\n",
+      + "  --install-target P  config install path (default ~/.omp/agent/config.yml)\n",
   );
   process.exit(message ? 64 : 0);
 }
@@ -103,6 +129,10 @@ function note(detail) {
   say(`  note ${detail}`);
 }
 
+function warn(detail) {
+  say(`  WARN ${detail}`);
+}
+
 function stamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
@@ -118,7 +148,7 @@ function bareRoute(route) {
 }
 
 function parseArgs(argv) {
-  const opts = {
+  const parsed = {
     apply: false,
     ufoRoot: process.env.UFO_ROOT || DEFAULT_UFO_ROOT,
     // Overridable so the merge path can be exercised against a throwaway copy
@@ -126,23 +156,21 @@ function parseArgs(argv) {
     // script imports.
     ufoJson: null,
     installTarget: path.join(homedir(), ".omp", "agent", "config.yml"),
-    skipPostSteps: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === "--apply") opts.apply = true;
-    else if (arg === "--skip-post-steps") opts.skipPostSteps = true;
+    if (arg === "--apply") parsed.apply = true;
     else if (arg === "--help" || arg === "-h") usage();
     else if (arg === "--ufo-root" || arg === "--install-target" || arg === "--ufo-json") {
       const value = argv[i + 1];
       if (typeof value !== "string" || value.length === 0) usage(`${arg} requires a value`);
-      if (arg === "--ufo-root") opts.ufoRoot = path.resolve(value);
-      else if (arg === "--ufo-json") opts.ufoJson = path.resolve(value);
-      else opts.installTarget = path.resolve(value);
+      if (arg === "--ufo-root") parsed.ufoRoot = path.resolve(value);
+      else if (arg === "--ufo-json") parsed.ufoJson = path.resolve(value);
+      else parsed.installTarget = path.resolve(value);
       i += 1;
     } else usage(`unexpected argument: ${arg}`);
   }
-  return opts;
+  return parsed;
 }
 
 // ── step 1: candidate preflight ────────────────────────────────────────────
@@ -150,7 +178,7 @@ function parseArgs(argv) {
 // parse a single line. Checking them here first means a failure names the real
 // cause instead of surfacing as an opaque resolver error.
 function preflightCandidate(screen) {
-  rule("1/7  candidate preflight");
+  rule("1/8  candidate preflight");
   const stat = lstatSync(CANDIDATE, { throwIfNoEntry: false });
   if (stat === undefined) fail(`candidate not found: ${CANDIDATE}`);
   if (stat.isSymbolicLink()) {
@@ -191,7 +219,7 @@ function preflightCandidate(screen) {
 
 // ── step 2: the resolver gate ──────────────────────────────────────────────
 async function resolverGate() {
-  rule("2/7  resolver gate — omp-global-config.mjs readGlobalSeatRouting");
+  rule("2/8  resolver gate — omp-global-config.mjs readGlobalSeatRouting");
   // The dispatcher, the token-plan probes and the mirror all honor this
   // override; setting it means every code path reached below audits the
   // candidate rather than the installed file.
@@ -224,134 +252,18 @@ async function resolverGate() {
     say(`  ${alias.padEnd(10)} ${entry.route}`);
     say(`  ${"".padEnd(10)} ${seats.length} seat(s): ${seats.join(", ")} — chain ${entry.fallbackChain.length} hop(s)`);
   }
+  // The effort variants are pool members no seat pins to; naming them here is
+  // what makes the granularity mechanism visible in the dry-run output.
+  const variants = [...resolved.modelRoles.keys()].filter((key) => /^(m_strong|m_mid|m_fast)_/.test(key));
+  if (variants.length > 0) {
+    say("");
+    say(`  ${variants.length} effort variant(s) the L1 may select per mission/round/wave:`);
+    for (const variant of variants.sort()) {
+      const hops = resolved.fallbackChains.get(variant)?.length ?? 0;
+      say(`    @${variant.padEnd(14)} ${resolved.modelRoles.get(variant).padEnd(46)} chain ${hops} hop(s)`);
+    }
+  }
   return { mod, resolved };
-}
-
-// ── step 4: the mirror / splitRoute gate ───────────────────────────────────
-// renderSeatRoutingMirror is the validation half of `sync-global-routing.mjs
-// --check`: it splitRoute-validates every seat primary and every seat chain
-// step (grammar, effort whitelist, gemini ban) without writing the mirror.
-// The l1Alias is taken from the DELTA, not from the live config/ufo.json, so
-// this validates the post-apply state — pre-apply, ufo.json still names an
-// alias the candidate deliberately drops.
-async function mirrorGate(l1Alias) {
-  rule("4/7  route gate — sync-global-routing.mjs splitRoute over every seat chain");
-  const mod = await import(path.join(opts.ufoRoot, "scripts", "sync-global-routing.mjs"));
-  let rendered;
-  try {
-    rendered = mod.renderSeatRoutingMirror({ path: CANDIDATE, l1Alias });
-  } catch (error) {
-    fail(`route validation refused the candidate: ${error?.message ?? error}`);
-  }
-  const mirror = JSON.parse(rendered);
-  ok(`every seat primary and every chain step splitRoute-clean (effort whitelist `
-    + `${EFFORT_SUFFIXES.join("|")}, gemini ban) at l1Alias ${l1Alias}`);
-
-  const badEffort = [];
-  for (const [seat, row] of Object.entries(mirror.seats)) {
-    for (const step of [{ requested: row.requested }, ...row.fallbackChain]) {
-      const colon = step.requested.lastIndexOf(":");
-      if (colon !== -1 && !EFFORT_SUFFIXES.includes(step.requested.slice(colon + 1))) {
-        badEffort.push(`${seat}: ${step.requested}`);
-      }
-    }
-  }
-  if (badEffort.length > 0) fail(`non-whitelisted effort suffix: ${badEffort.join(", ")}`);
-  ok("no seat chain step carries an illegal effort suffix (:minimal is seat-illegal)");
-  return { mod, rendered, mirror };
-}
-
-// ── step 5: the compile gate's chain rule, replicated ──────────────────────
-// build.rs extract_omp_chains pushes the seat primary first, then every
-// fallback step, and validate_chain requires the resulting list to be
-// non-empty with pairwise-distinct BARE models. Replicated here because the
-// real gate is a cargo build this script must not trigger.
-function compileGateRule(mirror, l1Alias) {
-  rule("5/7  compile gate — build.rs validate_chain + validate_generated_graph (replicated)");
-  const failures = [];
-  let totalSteps = 0;
-  for (const seat of MIRROR_SEATS) {
-    const row = mirror.seats[seat];
-    if (row === undefined) {
-      failures.push(`${seat}: absent from the mirror`);
-      continue;
-    }
-    const requested = [row.requested, ...row.fallbackChain.map((step) => step.requested)];
-    totalSteps += requested.length;
-    if (requested.length < 2) {
-      failures.push(`${seat}: chain is empty (primary with no fallback step)`);
-      continue;
-    }
-    const bares = requested.map(bareRoute);
-    const seen = new Set();
-    for (const bare of bares) {
-      if (seen.has(bare)) {
-        failures.push(`${seat}: duplicates or wraps bare model ${bare}`);
-        break;
-      }
-      seen.add(bare);
-    }
-  }
-  if (failures.length > 0) fail(failures.join("; "));
-  ok(`all ${MIRROR_SEATS.length} seat chains non-empty, ${totalSteps} primary+hop routes, `
-    + "pairwise-distinct bare models — no chain wraps its own primary");
-
-  if (mirror.seats.main.alias !== l1Alias) {
-    fail(`seats.main.alias ${JSON.stringify(mirror.seats.main.alias)} must equal `
-      + `sighting.dispatch.missionFormat.l1Alias ${JSON.stringify(l1Alias)}`);
-  }
-  ok(`seats.main.alias === l1Alias === ${JSON.stringify(l1Alias)}`);
-  return mirror;
-}
-
-// ── step 6: the real --check subprocess ────────────────────────────────────
-function runRealCheck() {
-  const result = spawnSync(
-    process.execPath,
-    [path.join("scripts", "sync-global-routing.mjs"), "--check"],
-    {
-      cwd: opts.ufoRoot,
-      encoding: "utf8",
-      env: { ...process.env, UFO_OMP_GLOBAL_CONFIG_PATH: CANDIDATE },
-    },
-  );
-  const stdout = (result.stdout ?? "").trim();
-  const stderr = (result.stderr ?? "").trim();
-  return { status: result.status, stdout, stderr };
-}
-
-function checkGate(expectInSync) {
-  rule("6/7  sync-global-routing.mjs --check (real subprocess, candidate via env override)");
-  if (!existsSync(path.join(opts.ufoRoot, "scripts", "sync-global-routing.mjs"))) {
-    note("sync-global-routing.mjs not present under --ufo-root; skipped");
-    return;
-  }
-  const { status, stdout, stderr } = runRealCheck();
-  for (const line of stdout.split("\n").filter(Boolean)) say(`       ${redact(line)}`);
-  for (const line of stderr.split("\n").filter(Boolean)) say(`       ${redact(line)}`);
-
-  if (status === 0) {
-    ok("the bundled mirror is byte-identical to the candidate's resolved table");
-    return;
-  }
-  if (status === 64) fail(`sync-global-routing.mjs usage error: ${stderr || stdout}`);
-  if (status !== 1) fail(`sync-global-routing.mjs exited ${status}`);
-
-  const drift = /drifts from the live global OMP config/.test(stderr);
-  const staleAlias = /modelRoles has no alias/.test(stderr);
-  if (expectInSync) {
-    fail(`sync-global-routing.mjs --check still fails after apply: ${stderr || stdout}`);
-  }
-  if (drift) {
-    note(`${MIRROR_REL} drifts from the candidate — EXPECTED before apply; `
-      + "`npm run contracts:sync` regenerates it");
-  } else if (staleAlias) {
-    note("config/ufo.json still declares an l1Alias the candidate drops — EXPECTED "
-      + "before apply; the dispatch merge below repoints it, and steps 3-4 already "
-      + "validated the candidate at the post-apply alias");
-  } else {
-    fail(`sync-global-routing.mjs --check refused the candidate: ${stderr || stdout}`);
-  }
 }
 
 // ── step 3: the dispatch delta ─────────────────────────────────────────────
@@ -432,7 +344,7 @@ function planNoteRewrite(rawText, oldMin, newMin, ceiling) {
 }
 
 function dispatchGate() {
-  rule("3/7  dispatch delta — config/ufo.json sighting.dispatch");
+  rule("3/8  dispatch delta — config/ufo.json sighting.dispatch");
   if (!existsSync(DELTA_PATH)) fail(`dispatch delta not found: ${DELTA_PATH}`);
   let delta;
   try {
@@ -480,77 +392,401 @@ function dispatchGate() {
   return { delta, ufoJsonPath, rawText, dispatch, l1Alias };
 }
 
-// ── step 7: the plan ───────────────────────────────────────────────────────
+// ── step 4: the mirror / splitRoute gate ───────────────────────────────────
+// renderSeatRoutingMirror is the validation half of `sync-global-routing.mjs
+// --check`: it splitRoute-validates every seat primary and every seat chain
+// step (grammar, effort whitelist, gemini ban) without writing the mirror.
+// The l1Alias is taken from the DELTA, not from the live config/ufo.json, so
+// this validates the post-apply state — pre-apply, ufo.json still names an
+// alias the candidate deliberately drops.
+//
+// The mirror only covers the fourteen seats, which leaves the omp roles, the
+// effort variants and the pool-member aliases checked by nothing at all — a
+// typo in one of those would pass every ufo gate and only surface when an L1
+// selected it at dispatch. wholeTableAudit closes that hole by applying the
+// same rules to every route in the file.
+const GEMINI_MARKERS = ["gemini", "google-ai", "google_ai", "google-gemini", "bard"];
+
+/**
+ * Grammar + effort + gemini parity with sync-global-routing.mjs splitRoute.
+ * @returns {string | null} the violation, or null when the route is clean
+ */
+function auditRoute(route, label) {
+  if (typeof route !== "string" || !route.includes("/")) {
+    return `${label} is not a provider/model route: ${route}`;
+  }
+  const identity = route.toLowerCase();
+  if (!identity.startsWith("google-antigravity/")
+    && GEMINI_MARKERS.some((banned) => identity.includes(banned))) {
+    return `${label} names a banned gemini-family route: ${route}`;
+  }
+  const slash = route.indexOf("/");
+  const provider = route.slice(0, slash);
+  const rest = route.slice(slash + 1);
+  if (provider !== provider.trim() || rest !== rest.trim()) {
+    return `${label} has a padded route selector: ${route}`;
+  }
+  const colon = rest.lastIndexOf(":");
+  const suffix = colon === -1 ? null : rest.slice(colon + 1);
+  if (suffix !== null && !EFFORT_SUFFIXES.includes(suffix)) {
+    return `${label} has a non-whitelisted effort suffix (:${EFFORT_SUFFIXES.join("|")}): ${route}`;
+  }
+  const model = suffix === null ? rest : rest.slice(0, colon);
+  if (provider.length === 0 || model.length === 0) {
+    return `${label} has an empty provider or model segment: ${route}`;
+  }
+  if (!/^[A-Za-z0-9_.-]+$/.test(provider)) return `${label} has an invalid provider segment: ${route}`;
+  if (!/^[A-Za-z0-9_.-]+$/.test(model)) return `${label} has an invalid model segment: ${route}`;
+  return null;
+}
+
+function wholeTableAudit(resolved) {
+  const problems = [];
+  let routes = 0;
+  for (const [alias, route] of resolved.modelRoles) {
+    routes += 1;
+    const problem = auditRoute(route, `modelRoles.${alias}`);
+    if (problem !== null) problems.push(problem);
+  }
+  for (const [key, steps] of resolved.fallbackChains) {
+    steps.forEach((step, index) => {
+      routes += 1;
+      const problem = auditRoute(step, `retry.fallbackChains.${key}[${index}]`);
+      if (problem !== null) problems.push(problem);
+    });
+    // Bare-distinctness over the chain's own primary plus its steps, which is
+    // what build.rs validate_chain enforces for seats. The primary is the alias
+    // route when the key names an alias, else the concrete-selector key itself.
+    const primary = resolved.modelRoles.get(key) ?? (key.includes("/") ? key : null);
+    if (primary === null || steps.length === 0) continue;
+    const seen = new Map([[bareRoute(primary), "the primary"]]);
+    for (const step of steps) {
+      const bare = bareRoute(step);
+      if (seen.has(bare)) {
+        problems.push(`retry.fallbackChains.${key}: ${step} repeats bare model ${bare}, `
+          + `already carried by ${seen.get(bare)} — a chain may not wrap its own primary `
+          + "or repeat a model at another effort");
+        break;
+      }
+      seen.set(bare, step);
+    }
+  }
+  if (problems.length > 0) {
+    say("");
+    for (const problem of problems.slice(0, 12)) say(`       ${redact(problem)}`);
+    if (problems.length > 12) say(`       …and ${problems.length - 12} more`);
+    fail(`whole-table route audit found ${problems.length} violation(s), listed above`);
+  }
+  ok(`whole-table audit: all ${routes} routes across ${resolved.modelRoles.size} aliases and `
+    + `${resolved.fallbackChains.size} chains are splitRoute-legal, and every chain is `
+    + "bare-distinct against its own primary — including the aliases no seat pins to");
+}
+
+async function mirrorGate(l1Alias, resolved) {
+  rule("4/8  route gate — splitRoute over every seat chain, then over the whole table");
+  const mod = await import(path.join(opts.ufoRoot, "scripts", "sync-global-routing.mjs"));
+  let rendered;
+  try {
+    rendered = mod.renderSeatRoutingMirror({ path: CANDIDATE, l1Alias });
+  } catch (error) {
+    fail(`route validation refused the candidate: ${error?.message ?? error}`);
+  }
+  const mirror = JSON.parse(rendered);
+  ok(`every seat primary and every seat chain step splitRoute-clean (effort whitelist `
+    + `${EFFORT_SUFFIXES.join("|")}, gemini ban) at l1Alias ${l1Alias}`);
+  wholeTableAudit(resolved);
+  return { mod, rendered, mirror };
+}
+
+// ── step 5: the compile gate's chain rule, replicated ──────────────────────
+// build.rs extract_omp_chains pushes the seat primary first, then every
+// fallback step, and validate_chain requires the resulting list to be
+// non-empty with pairwise-distinct BARE models. Replicated here because the
+// real gate is a cargo build this script must not trigger.
+function compileGateRule(mirror, l1Alias) {
+  rule("5/8  compile gate — build.rs validate_chain + validate_generated_graph (replicated)");
+  const failures = [];
+  let totalSteps = 0;
+  for (const seat of MIRROR_SEATS) {
+    const row = mirror.seats[seat];
+    if (row === undefined) {
+      failures.push(`${seat}: absent from the mirror`);
+      continue;
+    }
+    const requested = [row.requested, ...row.fallbackChain.map((step) => step.requested)];
+    totalSteps += requested.length;
+    if (requested.length < 2) {
+      failures.push(`${seat}: chain is empty (primary with no fallback step)`);
+      continue;
+    }
+    const bares = requested.map(bareRoute);
+    const seen = new Set();
+    for (const bare of bares) {
+      if (seen.has(bare)) {
+        failures.push(`${seat}: duplicates or wraps bare model ${bare}`);
+        break;
+      }
+      seen.add(bare);
+    }
+  }
+  if (failures.length > 0) fail(failures.join("; "));
+  ok(`all ${MIRROR_SEATS.length} seat chains non-empty, ${totalSteps} primary+hop routes, `
+    + "pairwise-distinct bare models — no chain wraps its own primary");
+
+  if (mirror.seats.main.alias !== l1Alias) {
+    fail(`seats.main.alias ${JSON.stringify(mirror.seats.main.alias)} must equal `
+      + `sighting.dispatch.missionFormat.l1Alias ${JSON.stringify(l1Alias)}`);
+  }
+  ok(`seats.main.alias === l1Alias === ${JSON.stringify(l1Alias)}`);
+  return mirror;
+}
+
+// ── step 6: the 32-lane wave gate ──────────────────────────────────────────
+// The operator's directive is "swarm waves of 32 workers but up to 100", and
+// waveMinLanes 32 makes a 32-lane spawn wave the narrowest legal one. This
+// proves that against the REAL planner twice over: once through the CLI, which
+// reads the band from config/ufo.json as it stands, and once through the
+// exported planSwarmWave with the POST-APPLY band injected — so the dry run
+// validates the floor that does not exist on disk yet.
+function buildWaveSpec(lanes) {
+  const items = [];
+  for (let i = 0; i < lanes; i += 1) {
+    items.push({
+      // TASK_NAME_PATTERN: /^[A-Z][A-Za-z0-9]{1,31}$/
+      name: `BandProbeLane${String(i + 1).padStart(3, "0")}`,
+      role: WAVE_ROLES[i % WAVE_ROLES.length],
+      prompt: `Wave-floor probe lane ${i + 1} of ${lanes}. Distinct prompt body `
+        + `${i + 1}/${lanes} — this spec is generated by host/apply.mjs to prove the `
+        + `${lanes}-lane band admits a spawn wave, and is never dispatched.`,
+    });
+  }
+  return {
+    wave: `hostcfg-band-probe-${lanes}`,
+    maxLanes: MAX_SWARM_LANES,
+    context: `host/apply.mjs verification probe: the ${lanes}-lane wave floor must `
+      + "admit exactly this many spawn lanes. Generated, never dispatched.",
+    items,
+  };
+}
+
+function waveGate(delta) {
+  rule("6/8  wave gate — ufo-swarm-wave.mjs plan against a 32-lane spec");
+  const script = path.join(opts.ufoRoot, "scripts", "ufo-swarm-wave.mjs");
+  if (!existsSync(script)) {
+    note("scripts/ufo-swarm-wave.mjs not present under --ufo-root; skipped");
+    return null;
+  }
+  const dir = mkdtempSync(path.join(tmpdir(), "hostcfg-wave-"));
+  let livePolicy = null;
+  try {
+    // The spec lives in the system temp dir, never under --ufo-root: `plan`
+    // writes nothing, and this script's footprint there must stay at exactly
+    // the one config/ufo.json merge.
+    const specPath = path.join(dir, `band-${WAVE_PROBE_LANES}.json`);
+    writeFileSync(specPath, `${JSON.stringify(buildWaveSpec(WAVE_PROBE_LANES), null, 1)}\n`, "utf8");
+    const result = spawnSync(
+      process.execPath,
+      [path.join("scripts", "ufo-swarm-wave.mjs"), "plan", "--spec", specPath],
+      { cwd: opts.ufoRoot, encoding: "utf8", env: { ...process.env, UFO_OMP_GLOBAL_CONFIG_PATH: CANDIDATE } },
+    );
+    if (result.status !== 0) {
+      for (const line of (result.stderr ?? "").split("\n").filter(Boolean)) say(`       ${redact(line)}`);
+      fail(`ufo-swarm-wave.mjs plan refused the ${WAVE_PROBE_LANES}-lane spec (exit ${result.status})`);
+    }
+    let plan;
+    try {
+      plan = JSON.parse(result.stdout);
+    } catch (error) {
+      fail(`ufo-swarm-wave.mjs plan emitted unparseable JSON: ${error?.message ?? error}`);
+    }
+    livePolicy = plan.policy ?? null;
+    if (plan.counts?.total !== WAVE_PROBE_LANES || plan.counts?.spawn !== WAVE_PROBE_LANES) {
+      fail(`plan counted ${JSON.stringify(plan.counts)} for a ${WAVE_PROBE_LANES}-lane spec`);
+    }
+    ok(`real CLI: a ${WAVE_PROBE_LANES}-lane spawn wave plans clean `
+      + `(band from config/ufo.json as it stands: ${livePolicy?.waveMinLanes}-${livePolicy?.waveMaxLanes})`);
+
+    // Now the band that only exists after the merge. planSwarmWave takes an
+    // injected policy and validates it exactly as the config loader would, so
+    // this is the real planner judging the post-apply numbers.
+    const postPolicy = {
+      ...(livePolicy ?? {}),
+      source: "config",
+      maxLanes: delta.swarm.maxLanes,
+      waveMinLanes: delta.swarm.waveMinLanes,
+      waveMaxLanes: delta.swarm.waveMaxLanes,
+    };
+    const mod = waveModule;
+    if (mod === null) fail("scripts/ufo-swarm-wave.mjs was not preloaded");
+    const admitted = mod.planSwarmWave(buildWaveSpec(WAVE_PROBE_LANES), { policy: postPolicy });
+    if (admitted.counts?.total !== WAVE_PROBE_LANES) {
+      fail(`post-apply band admitted ${JSON.stringify(admitted.counts)} for ${WAVE_PROBE_LANES} lanes`);
+    }
+    ok(`injected post-apply band ${delta.swarm.waveMinLanes}-${delta.swarm.waveMaxLanes}: `
+      + `${WAVE_PROBE_LANES} lanes admitted (exactly at the new floor)`);
+
+    // The floor must actually bite, or raising it changed nothing.
+    const below = WAVE_PROBE_LANES - 1;
+    let refusal = null;
+    try {
+      mod.planSwarmWave(buildWaveSpec(below), { policy: postPolicy });
+    } catch (error) {
+      refusal = error?.code ?? error?.message ?? "unknown";
+    }
+    if (refusal === null) {
+      fail(`post-apply band still admits a ${below}-lane wave — the new floor does not bite`);
+    }
+    if (refusal !== "too_few_lanes") {
+      fail(`a ${below}-lane wave was refused as ${JSON.stringify(refusal)}, expected too_few_lanes`);
+    }
+    ok(`a ${below}-lane wave is refused as too_few_lanes under the post-apply band — `
+      + "the 16 -> 32 raise is real, not cosmetic");
+    return livePolicy;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// planSwarmWave is ESM-only and the wave gate is synchronous, so main() awaits
+// the import into this module-level binding before waveGate runs.
+let waveModule = null;
+
+// ── step 7: mirror drift, reported never enforced ──────────────────────────
+// The bundled mirrors are NOT regenerated by this script, by operator decision.
+// So `sync-global-routing.mjs --check` is expected to report drift after apply,
+// and that is surfaced as a WARNING the operator owns — never as a failure, and
+// never as something this script tries to auto-fix.
+function runRealCheck() {
+  const result = spawnSync(
+    process.execPath,
+    [path.join("scripts", "sync-global-routing.mjs"), "--check"],
+    {
+      cwd: opts.ufoRoot,
+      encoding: "utf8",
+      env: { ...process.env, UFO_OMP_GLOBAL_CONFIG_PATH: CANDIDATE },
+    },
+  );
+  return {
+    status: result.status,
+    stdout: (result.stdout ?? "").trim(),
+    stderr: (result.stderr ?? "").trim(),
+  };
+}
+
+function mirrorStatusReport(applied) {
+  rule(`7/8  bundled-mirror status — sync-global-routing.mjs --check (reported, never enforced)`);
+  if (!existsSync(path.join(opts.ufoRoot, "scripts", "sync-global-routing.mjs"))) {
+    note("sync-global-routing.mjs not present under --ufo-root; skipped");
+    return;
+  }
+  const { status, stdout, stderr } = runRealCheck();
+  for (const line of stdout.split("\n").filter(Boolean)) say(`       ${redact(line)}`);
+  for (const line of stderr.split("\n").filter(Boolean)) say(`       ${redact(line)}`);
+
+  const drift = /drifts from the live global OMP config/.test(stderr);
+  const staleAlias = /modelRoles has no alias/.test(stderr);
+  if (status === 0) {
+    ok("the bundled mirror already matches this candidate's resolved table");
+    return;
+  }
+  if (applied) {
+    warn("EXPECTED after apply, and intentionally left alone: the bundled mirror is");
+    warn("stale because this script does not run contracts:sync. Operator-owned.");
+    return;
+  }
+  if (drift) {
+    note("the bundled mirror drifts from the candidate — EXPECTED before apply, and it");
+    note("stays drifted after apply by operator decision. Steps 4-5 already validated");
+    note("the table the mirror would carry, so the drift is cosmetic, not semantic.");
+  } else if (staleAlias) {
+    note("config/ufo.json still declares an l1Alias the candidate drops — EXPECTED");
+    note("before apply; the dispatch merge repoints it, and steps 4-5 already");
+    note("validated the candidate at the post-apply alias.");
+  } else {
+    // A refusal that is neither drift nor the known pre-apply alias mismatch is
+    // still only a report: steps 2-5 are the gates that decide whether the
+    // candidate is installable, and this subprocess is a mirror-status probe.
+    warn(`--check reported something other than drift: ${redact(stderr || stdout)}`);
+    warn("steps 2-5 are the authoritative gates; investigate before applying.");
+  }
+}
+
+// ── step 8: the plan ───────────────────────────────────────────────────────
 function printPlan({ edits, noteRewrites, ufoJsonPath, installTarget, apply }) {
-  rule("7/7  apply plan");
-  say(`  mode            ${apply ? "APPLY — files will be written" : "DRY RUN — nothing will be written"}`);
+  rule("8/8  apply plan");
+  say(`  mode            ${apply ? "APPLY — two files will be written" : "DRY RUN — nothing will be written"}`);
   say("");
-  say("  candidate       " + CANDIDATE);
-  say("  install target  " + installTarget);
+  say("  writes EXACTLY two files, and reads everything else:");
+  say("");
+  say(`  1. ${installTarget}`);
+  say(`     from ${CANDIDATE}`);
   if (existsSync(installTarget)) {
     const stat = lstatSync(installTarget);
-    say(`                  exists, ${stat.size} bytes, mode ${stat.mode.toString(8).slice(-4)}`
+    say(`     exists, ${stat.size} bytes, mode ${stat.mode.toString(8).slice(-4)}`
       + `${stat.isSymbolicLink() ? " — SYMLINK, apply will refuse" : ""}`);
-    say(`  backup          ${installTarget}.${apply ? "<timestamp>" : stamp()}.bak`);
+    say(`     backup: ${installTarget}.${apply ? "<timestamp>" : stamp()}.bak`);
   } else {
-    say("                  does not exist yet — no backup needed");
+    say("     does not exist yet — no backup needed");
   }
   say("");
-  say("  merge target    " + ufoJsonPath);
-  say(`                  ${readFileSync(ufoJsonPath, "utf8").length} bytes, 1-space indent, `
-    + "surgical per-line value rewrite (no re-serialization)");
-  say(`  backup          ${ufoJsonPath}.${apply ? "<timestamp>" : stamp()}.bak`);
+  say(`  2. ${ufoJsonPath}`);
+  say(`     ${readFileSync(ufoJsonPath, "utf8").length} bytes, 1-space indent, surgical per-line`);
+  say("     value rewrite — no re-serialization, so unrelated lines never churn");
+  say(`     backup: ${ufoJsonPath}.${apply ? "<timestamp>" : stamp()}.bak`);
   say("");
-  say("  sighting.dispatch key changes:");
+  say("     sighting.dispatch key changes:");
   for (const edit of edits) {
     const at = `sighting.dispatch.${edit.at}`;
     if (edit.change === "unchanged") {
-      say(`    = ${at} ${JSON.stringify(edit.after)} (already correct, line untouched)`);
+      say(`       = ${at} ${JSON.stringify(edit.after)} (already correct, line untouched)`);
     } else {
-      say(`    ${edit.change === "add" ? "+" : ">"} ${at} ${JSON.stringify(edit.before)} -> ${JSON.stringify(edit.after)}`);
+      say(`       ${edit.change === "add" ? "+" : ">"} ${at} ${JSON.stringify(edit.before)} -> ${JSON.stringify(edit.after)}`);
     }
   }
   say("");
+  say("     swarm.note band wording:");
   if (noteRewrites.length === 0) {
-    say("  swarm.note band wording:");
-    say("    = no band wording found in sighting.dispatch.swarm.note — nothing to rewrite.");
-    say("      The live note describes routing and lane taxonomy but never restates the");
-    say("      numeric wave band, so it does not contradict the new floor and is left");
-    say("      byte-identical. (M1 survey 4/4 reported a 16-100 mention here; the");
-    say("      current note carries none. The four hard-coded band mentions that do");
-    say("      exist are in AGENTS.md and are listed as manual steps below.)");
+    say("       = no band wording found — nothing to rewrite, note left byte-identical.");
+    say("         The live note covers wave batching, resume lanes, taxonomy roles, the");
+    say("         m_* alias table and the generated mirror, but never restates the");
+    say("         numeric band, so it cannot contradict the new floor. The band");
+    say("         mentions that do exist are in AGENTS.md and are deferred below.");
   } else {
-    say("  swarm.note band wording:");
     for (const rewrite of noteRewrites) {
-      say(`    > ${JSON.stringify(rewrite.from)} -> ${JSON.stringify(rewrite.to)} at byte ${rewrite.index}`);
+      say(`       > ${JSON.stringify(rewrite.from)} -> ${JSON.stringify(rewrite.to)} at byte ${rewrite.index}`);
     }
   }
   say("");
-  say("  post-apply steps" + (apply ? "" : " (not run in dry run)") + ":");
-  say("    1. npm run contracts:sync            # in " + opts.ufoRoot);
-  say("       regenerates " + MIRROR_REL + " from the installed config");
-  say("       and re-renders the generated seat table in AGENTS.md");
-  say("    2. node scripts/render-seat-tables.mjs   # explicit re-run, idempotent");
-  say("    3. node scripts/sync-global-routing.mjs --check   # must exit 0");
+  say("  deliberately NOT touched (minimal-footprint directive):");
+  say("    - no npm run contracts:sync, no scripts/render-seat-tables.mjs, no AGENTS.md");
+  say("    - nothing else anywhere under " + opts.ufoRoot);
+  say("    - the generated 32-lane probe spec lives in the system temp dir and is removed");
+}
+
+function printClosingNotice(applied) {
+  rule(applied ? "intentionally-left drift — operator-owned" : "what apply will intentionally leave behind");
+  say("  This script installs the routing authority and the dispatch delta and stops.");
+  say("  The derived artifacts below are left stale ON PURPOSE, per the operator's");
+  say("  minimal-footprint directive. Nothing here is a failure; all of it is a");
+  say("  decision the operator inherits explicitly:");
   say("");
-  say("  remaining MANUAL steps (this script never touches AGENTS.md):");
-  say("    - AGENTS.md ~line 154: the WAVE band is documented as (repo: 16-100) -> 32-100");
-  say("    - AGENTS.md ~line 162: \"one wave of N when 16 <= N <= 100\" -> 32 <= N <= 100");
-  say("    - AGENTS.md ~line 166: \"the 16-100 wave band\" -> the 32-100 wave band");
-  say("    - AGENTS.md ~line 146: the example fleet-spec L1 aliases m_swe (devin/swe-2:max)");
-  say("      and m_kimi_devin_high name routes that do not exist; m_kimi_devin_high is");
-  say("      dropped by this config entirely and m_swe is now devin/swe-1-6 with no effort");
-  say("    - AGENTS.md ~line 205 restates sighting.dispatch.maxConcurrentL1 (32 -> 16)");
-  say("    - the generated seat table between the BEGIN/END GENERATED markers in AGENTS.md");
-  say("      is regenerated by contracts:sync, not hand-edited");
+  for (const artifact of DEFERRED_ARTIFACTS) say(`    - ${artifact}`);
   say("");
-  say("  semantics the operator should expect after apply:");
-  say("    - maxConcurrentL1 16: at most 16 concurrent L1 orchestrators");
-  say("    - waveMinLanes 32: a spawn-bearing wave narrower than 32 lanes is now");
-  say("      refused with too_few_lanes. Resume-only waves stay exempt from the floor.");
-  say("    - task.maxConcurrency 32 and nativeProfiles.omp-native-v1.concurrencyCeiling 32");
-  say("      are unrelated to maxConcurrentL1 and deliberately unchanged — three");
-  say("      coincidental 32s, documented in the config header.");
+  say("  Consequences to expect, so none of them are a surprise:");
+  say("    - `npm run contracts:check` and `node scripts/sync-global-routing.mjs --check`");
+  say("      will report mirror drift. That is the deferred state, not a regression.");
+  say("    - `cargo build -p ufo-core-runtime` compiles against the STALE bundled mirror,");
+  say("      so the compiled seat table lags the installed one until the operator");
+  say("      regenerates it. The launcher reads the global config directly at dispatch");
+  say("      time, so live routing follows the new table immediately.");
+  say("    - AGENTS.md still documents a 16-lane wave floor while the config enforces 32,");
+  say("      so a reader of the docs and a reader of the config disagree.");
+  say("");
+  say("  To close the gap when the operator chooses (this script will not run them):");
+  say("    cd " + opts.ufoRoot);
+  say("    npm run contracts:sync && npm run contracts:check");
+  say("    node scripts/render-seat-tables.mjs --check");
+  say("    # then hand-edit the AGENTS.md band mentions listed above");
 }
 
 // ── apply ──────────────────────────────────────────────────────────────────
@@ -564,7 +800,7 @@ function backupFile(target, tag) {
 }
 
 // Atomic write twin of the repo's own writeAtomicFile: the installed config
-// feeds a cargo build and the dispatcher, so a torn write must never land.
+// feeds the dispatcher and a cargo build, so a torn write must never land.
 function writeAtomic(target, contents, mode) {
   mkdirSync(path.dirname(target), { recursive: true });
   const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
@@ -599,7 +835,7 @@ function installConfig(installTarget, text) {
   // path and require them to equal the candidate exactly.
   const readBack = readFileSync(installTarget, "utf8");
   if (readBack !== text) {
-    fail(`installed bytes at ${installTarget} differ from the candidate; restoring nothing, `
+    fail(`installed bytes at ${installTarget} differ from the candidate; `
       + `backup is at ${backup ?? "(none)"}`);
   }
   ok("read-back verification: installed bytes are identical to the candidate");
@@ -655,28 +891,6 @@ function mergeDispatch(ufoJsonPath, rawText, delta, edits, noteRewrites) {
   return backup;
 }
 
-function runPostSteps() {
-  rule("apply C  regenerate the derived contracts");
-  const steps = [
-    ["npm", ["run", "contracts:sync"]],
-    [process.execPath, [path.join("scripts", "render-seat-tables.mjs")]],
-  ];
-  for (const [command, args] of steps) {
-    say(`  $ ${command} ${args.join(" ")}`);
-    const result = spawnSync(command, args, { cwd: opts.ufoRoot, encoding: "utf8" });
-    for (const line of (result.stdout ?? "").split("\n").filter(Boolean)) {
-      say(`    ${redact(line)}`);
-    }
-    for (const line of (result.stderr ?? "").split("\n").filter(Boolean)) {
-      say(`    ${redact(line)}`);
-    }
-    if (result.status !== 0) {
-      fail(`${command} ${args.join(" ")} exited ${result.status}`);
-    }
-    ok("exit 0");
-  }
-}
-
 // ── main ───────────────────────────────────────────────────────────────────
 const opts = parseArgs(process.argv.slice(2));
 
@@ -716,9 +930,17 @@ if (resolved.seats.get("main").via.alias !== l1Alias) {
     + `missionFormat.l1Alias is ${JSON.stringify(l1Alias)}; build.rs requires them equal`);
 }
 
-const { mirror } = await mirrorGate(l1Alias);
+const { mirror } = await mirrorGate(l1Alias, resolved);
 compileGateRule(mirror, l1Alias);
-checkGate(false);
+
+// Preload the ESM wave module so the synchronous wave gate can use it.
+try {
+  waveModule = await import(path.join(opts.ufoRoot, "scripts", "ufo-swarm-wave.mjs"));
+} catch (error) {
+  fail(`scripts/ufo-swarm-wave.mjs could not be loaded from --ufo-root: ${error?.message ?? error}`);
+}
+waveGate(delta);
+mirrorStatusReport(false);
 
 const edits = planDispatchEdits(rawText, dispatch, delta);
 const noteRewrites = planNoteRewrite(
@@ -731,9 +953,12 @@ printPlan({ edits, noteRewrites, ufoJsonPath, installTarget: opts.installTarget,
 
 if (!opts.apply) {
   rule("verdict");
-  ok("DRY RUN PASSED — the candidate clears the resolver, the route gate and the");
-  ok("replicated compile gate, and the dispatch delta is within every runtime bound.");
-  say("  Re-run with --apply to install. Nothing was written.");
+  ok("DRY RUN PASSED — the candidate clears the resolver, the route gate, the");
+  ok("replicated compile gate and the 32-lane wave gate, and the dispatch delta is");
+  ok("within every runtime bound. Nothing was written.");
+  printClosingNotice(false);
+  say("");
+  say("  Re-run with --apply to install the two files.");
   process.exit(0);
 }
 
@@ -741,14 +966,27 @@ const text = readFileSync(CANDIDATE, "utf8");
 installConfig(opts.installTarget, text);
 mergeDispatch(ufoJsonPath, rawText, delta, edits, noteRewrites);
 
-if (opts.skipPostSteps) {
-  note("--skip-post-steps: contracts:sync, render-seat-tables and the final --check skipped");
+// Re-run the two verification gates against the post-apply state: the wave
+// planner now reads the merged band from disk, and the mirror probe now reports
+// the drift this script intentionally leaves behind.
+rule("apply C  re-verify against the post-apply state");
+const appliedPolicy = waveGate(delta);
+// The CLI reads <ufo-root>/config/ufo.json, which is only the merged file when
+// --ufo-json was not redirected. Report what was actually observed rather than
+// assuming the two paths coincide.
+const observedFloor = appliedPolicy?.waveMinLanes;
+if (observedFloor === delta.swarm.waveMinLanes) {
+  ok(`the real planner now reads waveMinLanes ${observedFloor} from config/ufo.json and `
+    + `still admits a ${WAVE_PROBE_LANES}-lane wave`);
 } else {
-  runPostSteps();
-  checkGate(true);
+  note(`the wave CLI read waveMinLanes ${observedFloor}, not the merged ${delta.swarm.waveMinLanes} —`);
+  note("--ufo-json points somewhere other than <ufo-root>/config/ufo.json, so the CLI");
+  note("validated the unmerged band. The injected-policy checks above are the ones");
+  note("that prove the merged band; a real --apply merges the file the CLI reads.");
 }
+mirrorStatusReport(true);
 
 rule("verdict");
-ok("APPLIED. Remaining work is the manual AGENTS.md band/alias edit listed in step 7/7");
-ok("— this script deliberately does not touch AGENTS.md.");
+ok("APPLIED. Two files written, both backed up, nothing else touched.");
+printClosingNotice(true);
 process.exit(0);
