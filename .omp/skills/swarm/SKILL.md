@@ -49,10 +49,11 @@ Invoke as `/skill:swarm`, `/swarm on`, `/swarm off`, or `/swarm <task>`.
 2. Read the `ufo-swarm-wave-dispatch-v1` result. Make **one** OMP `task` tool
    call using its `taskCall.context` and complete `taskCall.tasks` array as-is.
    If `taskCall` is `null`, there are no new spawn tasks: send each
-   `resumeSends` entry through its stated `hub send` to the recorded parked
-   agent. Resume is continuity to an existing agent, not a fresh spawn or a
-   second wave. Do not invent, omit, or rewrite lanes, roles, bindings, or
-   resumes after validation.
+   `resumeSends` entry to its recorded parked agent as
+   `hub send --to <entry.resume> --message <entry.message>` — `entry.name` is
+   bookkeeping, not a hub field. Resume is continuity to an existing agent, not
+   a fresh spawn or a second wave. Do not invent, omit, or rewrite lanes, roles,
+   bindings, or resumes after validation.
 3. Integrate and report only observed results. Workers advise the parent; keep
    one L1, no second judge, honest evidence, and no concurrent overlapping-file
    assignments. Wave output is advisory: no lane becomes a judge verdict.
