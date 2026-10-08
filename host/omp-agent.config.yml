@@ -1,0 +1,427 @@
+# Global OMP agent config — swarm host plus the merged model pool.
+#
+# Two parsers read this file, and the stricter one is not omp. The
+# ufo-fsd-alpha seat resolver (Projects/ufo-fsd-alpha/scripts/omp-global-config.mjs)
+# reads it with a hand-rolled dialect and fails closed unless these rules
+# hold, so keep them when editing:
+#   - top-level modelRoles, task and retry sections, each declared once at
+#     column 0 and each spelled as a bare `key:` line with nothing after the
+#     colon — an inline note on the header line makes the section read as
+#     missing, and a second column-0 spelling of the same name (even inside
+#     what looks like a comment block) makes it read as ambiguous
+#   - two-space indent, no tabs anywhere, no duplicate keys
+#   - map values are scalars only (no flow lists/maps, no block scalars)
+#   - chains are `- item` lines indented strictly deeper than their key; all
+#     chain keys sit at one shared indent; only an empty chain may use
+#     `key: []`, and a `key: []` that then carries items is refused
+#   - task.agentModelOverrides carries every ufo seat, or the launcher refuses
+#   - an alias in modelRoles must name a concrete route, never another @alias
+#   - every retry.fallbackChains key must be a modelRoles key, a modelRoles
+#     value, or a resolved seat route; anything else is rejected as dead weight
+#
+# Two further gates read the derived table, not this file, and constrain it
+# just as hard. scripts/sync-global-routing.mjs splitRoute-validates every
+# seat primary and every seat chain step: effort suffixes must be one of
+# low|medium|high|xhigh|max (`minimal` is illegal in a seat chain), and any
+# gemini-family route is refused unless it starts with google-antigravity/.
+# crates/ufo-core-runtime/build.rs then requires each seat's primary-plus-chain
+# to be non-empty with pairwise-distinct BARE models — effort stripped — so a
+# chain may never repeat a model at another effort, including its own primary.
+# Only the fourteen ufo seats are checked that way, which leaves the omp roles,
+# the effort variants and the pool-member aliases unguarded by any gate. This
+# file therefore holds itself to the STRICTEST rule everywhere: every route in
+# it — every modelRoles value and every step of all twenty-nine chains, seat or
+# not — is splitRoute-legal, and every chain is bare-distinct against its own
+# primary. host/apply.mjs enforces that over the whole table, so a typo in an
+# alias no seat consumes still fails the dry run instead of surfacing at
+# dispatch time. Two consequences worth knowing: `minimal` is not a legal ufo
+# effort suffix, so it appears nowhere here even in the omp-role chains that
+# would tolerate it; and no chain steps its own primary down to a lower effort.
+#
+# Model pool = the union of the providers authenticated on this host
+# (`omp models`: alibaba-token-plan 11, cursor 81, kimi-code 7, openai-codex 8,
+# zai 18) and the ufo-fsd-alpha seat-routing pool (google-antigravity, devin).
+# Every selector in that union appears below as a role value or a chain step,
+# so each one is reachable in some cascade. Selectors on providers this host
+# holds no credentials for are pool members, not promises: they become live
+# hops the moment that provider is logged in, and cost one provider error each
+# until then. `enabledModels` and `enabledProviders` stay unset on purpose —
+# both are allowlist filters, and filling them with unauthenticated selectors
+# would hide working models.
+#
+# The two providers the operator excluded are deliberately absent from this
+# file — no route and no comment names either one, so a grep for them comes
+# back empty. kimi-code appears only as a terminal fallback hop and never as a
+# seat primary: it is the declared secondary, and its monthly budget is the one
+# being protected.
+#
+# The operator's three alibaba token-plan credentials are all stored as omp
+# ACCOUNTS behind the single `alibaba-token-plan` provider id (imported with
+# `omp login alibaba-token-plan`, International region), and omp round-robins
+# accounts per provider — so every alibaba selector below names one lane and
+# omp balances the three keys internally. The kimi-code CLI separately keeps
+# its own three-provider copy of the same keys over one base URL; those `-2` /
+# `-3` spellings are a kimi-code config artifact and are not omp-addressable.
+# Two accuracy notes on verifying this: `omp usage` shows no token-plan section
+# because the quota-reporting cookie was skipped at login, and `omp token
+# alibaba-token-plan --list` enumerates OAuth accounts only. The evidence that
+# the accounts are live is therefore the serving catalog check — `omp models
+# alibaba-token-plan` returns the 11-model table from the credential store with
+# no environment variable set — not a list command.
+#
+# Chain keys come in three forms, one chain per route, no duplicates:
+# role names (default/smol/slow/plan), the ufo seat aliases (kept byte-for-byte
+# with the seat-routing table so regenerating the mirror is a no-op), and
+# concrete selectors for the host flagship lanes. The resolver prefers the
+# ALIAS key over the concrete one, so a seat always gets its bucket cascade and
+# the concrete chain fires only when something selects that selector directly.
+# The two intentionally differ: the alias chain is the ufo seat cascade, the
+# concrete chain is omp's own retry cascade.
+#
+# Effort is granular per bucket via variant aliases (m_strong_med,
+# m_strong_low, m_mid_med, m_mid_low, m_fast_high); the L1 picks the variant
+# per mission/round/wave. Seat pins use the default-effort bucket alias.
+# A variant names the same model as its bucket at a lower declared effort and
+# reuses the bucket's hop sequence byte-for-byte — the hops are capacity
+# fallbacks, so their efforts do not move with the primary's. Variants carry
+# alias-level chains only: nothing requires every modelRoles value to also own
+# a concrete-selector chain key, only that every declared chain key resolves,
+# so the variants stay lean. The effort each variant names is a real one in
+# omp's live catalog AND a legal ufo route suffix — which excludes `minimal`
+# outright and excludes `high` on qwen3.8-max, whose live efforts are
+# low,medium,xhigh. That is why the strong bucket has two variants and the fast
+# bucket only one.
+#
+# No key material belongs in this file. The resolver screens every line and key
+# it echoes into an error message and redacts anything credential-shaped; the
+# outright refusal to load a file that still carries a credential shape after
+# sanitizing lives in scripts/prepare-ephemeral-fleet.mjs, not in the parser.
+setupVersion: 2
+
+# Larger context windows where supported (the ufo L1 lane needs 1M tokens).
+extendedContext: true
+
+modelRoles:
+  # --- omp role selectors ---
+  # default: the strong bucket. qwen3.8-max tops out at xhigh — high and max
+  # are not valid efforts on it, so xhigh is the ceiling and not a typo.
+  default: alibaba-token-plan/qwen3.8-max:xhigh
+  # smol: cheap current-gen lane that still carries 1M context and vision, so
+  # titles, prewalk and probe work never compact early.
+  smol: alibaba-token-plan/qwen3.6-flash:high
+  # slow: deep-reasoning lane, 1M context and the deepest output budget on the
+  # gateway (384K).
+  slow: alibaba-token-plan/deepseek-v4-pro:max
+  # plan: architecture and planning, same 1M route as default.
+  plan: alibaba-token-plan/qwen3.8-max:xhigh
+  # --- the three ufo buckets, referenced as @name from agentModelOverrides ---
+  # m_strong: 1M-context deep reasoning — the L1, the planner and the critic.
+  # A genuine 1M route, which is what nativeProfiles.omp-native-v1.l1Context
+  # declares as the floor; the previous L1 lane was 872K against that same
+  # declared floor and no gate caught the shortfall.
+  m_strong: alibaba-token-plan/qwen3.8-max:xhigh
+  # m_mid: general implementation, review, watch and execute. high is the
+  # ceiling omp's live catalog declares for qwen3.8-flash.
+  m_mid: alibaba-token-plan/qwen3.8-flash:high
+  # m_fast: mechanical lanes, probes, distill and scribe.
+  m_fast: alibaba-token-plan/deepseek-v4.1-flash:max
+  # --- effort variants of the three buckets: same model, lower declared
+  # effort, identical hop sequence. No seat pins to these; the L1 selects one
+  # per mission/round/wave, which is the granularity mechanism ---
+  # qwen3.8-max live efforts are low,medium,xhigh — there is no high variant.
+  m_strong_med: alibaba-token-plan/qwen3.8-max:medium
+  m_strong_low: alibaba-token-plan/qwen3.8-max:low
+  # qwen3.8-flash live efforts are minimal,low,medium,high. minimal is not a
+  # legal ufo route suffix, so low is the floor variant and there is no
+  # m_mid_min.
+  m_mid_med: alibaba-token-plan/qwen3.8-flash:medium
+  m_mid_low: alibaba-token-plan/qwen3.8-flash:low
+  # deepseek-v4.1-flash live efforts are high,max, so max has exactly one
+  # lower rung.
+  m_fast_high: alibaba-token-plan/deepseek-v4.1-flash:high
+  # --- pool members no seat currently consumes ---
+  # m_antigravity: the gemini ban's one exemption and the connector seat's
+  # historical family. google-antigravity is not authenticated on this host, so
+  # connector runs on @m_mid instead; the alias and its chain stay declared so
+  # a future OAuth login re-opens the lane with no config edit.
+  m_antigravity: google-antigravity/gemini-3.8-flash:high
+  # m_composer: the only cursor bucket with quota left — cursor's "Other
+  # Models" monthly budget is exhausted, which kills every non-proprietary
+  # cursor model, so composer stays reachable and the rest do not.
+  m_composer: cursor/composer-2.5:high
+  # m_swe: the named devin lane. The devin-agent api family declares no
+  # efforts at all, so this route carries no effort suffix — the same spelling
+  # convention as swe-1-6. Caveat: omp's embedded devin catalog today lists
+  # only swe-1-6 and swe-1-6-fast, and devin auth has not landed in omp yet,
+  # so swe-2 is a pool member under the same policy as every unauthenticated
+  # selector — it becomes a live hop the moment `omp login devin` completes and
+  # the live catalog serves it. Until then m_swe resolves through its chain,
+  # which is exactly the two models omp does know.
+  m_swe: devin/swe-2
+  # --- host flagship lanes: the strongest model per authenticated provider,
+  # addressable as @m_k3 / @m_sol / @m_glm53 and keyed concretely below ---
+  m_k3: kimi-code/k3:max
+  m_sol: openai-codex/gpt-6.1-sol:max
+  m_glm53: zai/glm-5.3:max
+
+task:
+  # Thirty-two concurrent subagents — omp's own default, set explicitly per
+  # operator directive. ufo-fsd-alpha pins 0 ("no host cap") in its per-run
+  # overlays and bounds lane width itself (32-100 per wave, 100 members per
+  # L1), so this cap governs plain omp swarm runs on this host and nothing
+  # else. It is a real parallelism ceiling: pair with matching memory
+  # headroom before raising further.
+  #
+  # Three separate 32s now coincide and are NOT one setting: this
+  # task.maxConcurrency (omp's own subagent cap), sighting.dispatch.swarm's
+  # waveMinLanes (ufo's per-wave floor, raised from 16 to 32), and
+  # nativeProfiles.omp-native-v1.concurrencyCeiling. The last of those stays 32
+  # on purpose — it is a per-L1 judged-round topology bound, not an L1 count,
+  # and it is validated only as a positive integer, so nothing cross-checks it
+  # against the other two. sighting.dispatch.maxConcurrentL1 is the L1 count
+  # and moves independently to 16.
+  maxConcurrency: 32
+  # main -> executor -> probe nesting needs exactly depth 2 (operator
+  # directive); deeper fan-out is not used by any current seat.
+  maxRecursionDepth: 2
+  # The ufo seat table: 3 strong + 5 mid + 6 fast = 14. The resolver fails
+  # closed when a seat is missing, so all fourteen seats from
+  # omp-seat-routing.json are declared. reviewer and scout are also omp bundled
+  # agent names (omp ships reviewer, scout, security-reviewer, sonic, task), so
+  # those two omp subagents run on the same route ufo gives those seats. Every
+  # other key here is inert for omp and read only by ufo.
+  #
+  # reviewer and revenger are promoted to @m_mid here: both are thinking-class
+  # roles on a thinkingMs deadline and were under-provisioned on the old fast
+  # family. connector joins them on @m_mid because google-antigravity is not
+  # authenticated on this host.
+  #
+  # main MUST stay "@m_strong": build.rs refuses to compile unless
+  # seats.main.alias equals sighting.dispatch.missionFormat.l1Alias, and the
+  # dispatch delta sets that alias to m_strong.
+  agentModelOverrides:
+    connector: "@m_mid"
+    critic: "@m_strong"
+    distiller: "@m_fast"
+    executor: "@m_mid"
+    labrat: "@m_fast"
+    main: "@m_strong"
+    mutation-tester: "@m_fast"
+    planner: "@m_strong"
+    revenger: "@m_mid"
+    reviewer: "@m_mid"
+    scout: "@m_fast"
+    scribe: "@m_fast"
+    sentinel: "@m_mid"
+    simplifier: "@m_fast"
+
+retry:
+  modelFallback: true
+  fallbackChains:
+    # --- omp roles ---
+    # default: down the alibaba strong family, then out to the two providers
+    # with the deepest headroom on this host (openai-codex at 99% of its
+    # 7-day window free, zai essentially untouched), then the shared terminal
+    # hop. No preview lane: qwen3.8-max-preview is absent from the live
+    # catalog, so this chain starts one hop deeper than the design draft did.
+    default:
+      - "alibaba-token-plan/deepseek-v4-pro:max"
+      - "openai-codex/gpt-6.1-sol:max"
+      - "openai-codex/gpt-6-luna:high"
+      - "zai/glm-5.3:max"
+      - "kimi-code/k3:max"
+      - "kimi-code/kimi-for-coding:high"
+    # smol: the cheap and vision-capable end of the pool. The terminal hop is
+    # kimi-for-coding-highspeed at :low rather than :minimal — omp offers
+    # minimal on that model, but minimal is not a legal ufo route suffix and
+    # this file holds every chain to the seat-grade rule, so low is the floor.
+    smol:
+      - "alibaba-token-plan/qwen3.8-flash:medium"
+      - "alibaba-token-plan/qwen3.7-plus:high"
+      - "zai/glm-5.3-flash:low"
+      - "zai/glm-5v-turbo:high"
+      - "zai/glm-4.6v-flash:high"
+      - "kimi-code/kimi-for-coding-highspeed:low"
+    # slow: leave the family immediately. deepseek-v4-pro declares only high
+    # and max, so the only same-model step-down available is :high — and that
+    # repeats the primary's bare model, which the compile gate calls a wrap.
+    # The step is omitted rather than exempted, so this chain is bare-distinct
+    # like every other one in the file.
+    slow:
+      - "alibaba-token-plan/qwen3.8-max:xhigh"
+      - "openai-codex/gpt-5.6-sol:max"
+      - "openai-codex/gpt-6.1-sol:max"
+      - "zai/glm-5.3:max"
+      - "kimi-code/k3:max"
+    # plan: architecture cascade — one deep alibaba hop, then the codex
+    # frontier, then the zai flagship, then the kimi terminal.
+    plan:
+      - "alibaba-token-plan/deepseek-v4-pro:max"
+      - "openai-codex/gpt-5.6-terra:max"
+      - "zai/glm-5.3:high"
+      - "kimi-code/kimi-for-coding:high"
+
+    # --- ufo seat bucket chains: these three are the ones the compile gate
+    # validates, so each is non-empty, carries pairwise-distinct bare models,
+    # and never repeats its own primary at another effort ---
+    # m_strong: primary alibaba-token-plan/qwen3.8-max:xhigh. The
+    # google-antigravity hop is a pool member that costs one provider error
+    # until that OAuth login happens; it sits behind five authenticated hops.
+    m_strong:
+      - "alibaba-token-plan/deepseek-v4-pro:max"
+      - "alibaba-token-plan/glm-5.2:max"
+      - "openai-codex/gpt-5.6-sol:max"
+      - "openai-codex/gpt-5.6-terra:max"
+      - "zai/glm-5.3:max"
+      - "google-antigravity/claude-opus-5-5:high"
+      - "kimi-code/k3:max"
+    # m_mid: primary alibaba-token-plan/qwen3.8-flash:high.
+    m_mid:
+      - "alibaba-token-plan/qwen3.7-plus:high"
+      - "alibaba-token-plan/glm-5.2:high"
+      - "openai-codex/gpt-5.6-luna:medium"
+      - "zai/glm-5.3-flash:high"
+      - "cursor/composer-2.5:high"
+      - "kimi-code/kimi-for-coding:high"
+    # m_fast: primary alibaba-token-plan/deepseek-v4.1-flash:max.
+    m_fast:
+      - "alibaba-token-plan/qwen3.6-flash:high"
+      - "alibaba-token-plan/qwen3.8-flash:low"
+      - "zai/glm-5.3-flash:low"
+      - "zai/glm-4.7-flash:medium"
+      - "openai-codex/gpt-5.6-luna:low"
+      - "kimi-code/kimi-for-coding-highspeed:low"
+
+    # --- effort-variant chains: each reuses its bucket's hop sequence
+    # byte-for-byte. Only the primary's effort differs, so a variant stays
+    # compile-legal even if a future seat pins to one: the primary's bare
+    # model still collides with none of the hops ---
+    m_strong_med:
+      - "alibaba-token-plan/deepseek-v4-pro:max"
+      - "alibaba-token-plan/glm-5.2:max"
+      - "openai-codex/gpt-5.6-sol:max"
+      - "openai-codex/gpt-5.6-terra:max"
+      - "zai/glm-5.3:max"
+      - "google-antigravity/claude-opus-5-5:high"
+      - "kimi-code/k3:max"
+    m_strong_low:
+      - "alibaba-token-plan/deepseek-v4-pro:max"
+      - "alibaba-token-plan/glm-5.2:max"
+      - "openai-codex/gpt-5.6-sol:max"
+      - "openai-codex/gpt-5.6-terra:max"
+      - "zai/glm-5.3:max"
+      - "google-antigravity/claude-opus-5-5:high"
+      - "kimi-code/k3:max"
+    m_mid_med:
+      - "alibaba-token-plan/qwen3.7-plus:high"
+      - "alibaba-token-plan/glm-5.2:high"
+      - "openai-codex/gpt-5.6-luna:medium"
+      - "zai/glm-5.3-flash:high"
+      - "cursor/composer-2.5:high"
+      - "kimi-code/kimi-for-coding:high"
+    m_mid_low:
+      - "alibaba-token-plan/qwen3.7-plus:high"
+      - "alibaba-token-plan/glm-5.2:high"
+      - "openai-codex/gpt-5.6-luna:medium"
+      - "zai/glm-5.3-flash:high"
+      - "cursor/composer-2.5:high"
+      - "kimi-code/kimi-for-coding:high"
+    m_fast_high:
+      - "alibaba-token-plan/qwen3.6-flash:high"
+      - "alibaba-token-plan/qwen3.8-flash:low"
+      - "zai/glm-5.3-flash:low"
+      - "zai/glm-4.7-flash:medium"
+      - "openai-codex/gpt-5.6-luna:low"
+      - "kimi-code/kimi-for-coding-highspeed:low"
+
+    # --- pool-member chains: declared so each alias is reachable, consumed by
+    # no seat today. alibaba glm-5.3 is deliberately absent from every chain —
+    # the live catalog declares no efforts for it, so glm-5.3 hops go to zai
+    # and glm-5.2 hops go to alibaba ---
+    m_antigravity:
+      - "google-antigravity/claude-opus-5-5:high"
+      - "google-antigravity/gemini-3.1-pro:high"
+      - "google-antigravity/gemini-3.6-flash:medium"
+      - "alibaba-token-plan/qwen3.8-flash:medium"
+      - "kimi-code/kimi-for-coding:high"
+    m_composer:
+      - "cursor/composer-2.5-fast:high"
+      - "cursor/cursor-grok-4.6:high"
+    m_swe:
+      - "devin/swe-1-6"
+      - "devin/swe-1-6-fast"
+    m_k3:
+      - "kimi-code/k3-256k:max"
+      - "kimi-code/kimi-for-coding:max"
+      - "kimi-code/kimi-k2.5:high"
+    m_sol:
+      - "openai-codex/gpt-6-sol:max"
+      - "openai-codex/gpt-6-astra:max"
+      - "openai-codex/gpt-5.6-sol:max"
+      - "openai-codex/gpt-daybreak-blue-latest:max"
+    m_glm53:
+      - "zai/glm-5.2:max"
+      - "zai/glm-5.1:high"
+      - "zai/glm-5:high"
+      - "zai/glm-4.7:high"
+      - "alibaba-token-plan/glm-5.2:max"
+
+    # --- host flagship lanes, keyed by concrete selector so the cascade
+    # applies whether the model was picked as @m_k3 or by name. Each of these
+    # eleven keys is byte-for-byte one of the eleven distinct non-variant
+    # modelRoles values above, which is what keeps the dead-weight rule
+    # satisfied: change an effort suffix in modelRoles and the matching key
+    # here must change identically or the whole file fails to load. The five
+    # effort-variant values deliberately have NO concrete key — the rule
+    # constrains declared chain keys, not modelRoles values, so omitting them
+    # keeps the file lean without making anything dead weight ---
+    "alibaba-token-plan/qwen3.8-max:xhigh":
+      - "alibaba-token-plan/deepseek-v4-pro:max"
+      - "openai-codex/gpt-5.6-sol:max"
+      - "zai/glm-5.3:max"
+      - "kimi-code/k3:max"
+    "alibaba-token-plan/qwen3.8-flash:high":
+      - "alibaba-token-plan/qwen3.7-plus:high"
+      - "openai-codex/gpt-5.6-luna:medium"
+      - "zai/glm-5.3-flash:high"
+      - "kimi-code/kimi-for-coding:high"
+    "alibaba-token-plan/deepseek-v4.1-flash:max":
+      - "alibaba-token-plan/qwen3.6-flash:high"
+      - "zai/glm-5.3-flash:low"
+      - "openai-codex/gpt-5.6-luna:low"
+      - "kimi-code/kimi-for-coding-highspeed:low"
+    "alibaba-token-plan/qwen3.6-flash:high":
+      - "alibaba-token-plan/qwen3.7-plus:high"
+      - "zai/glm-5.3-flash:low"
+      - "kimi-code/kimi-for-coding-highspeed:low"
+    "alibaba-token-plan/deepseek-v4-pro:max":
+      - "alibaba-token-plan/qwen3.8-max:xhigh"
+      - "openai-codex/gpt-5.6-sol:max"
+      - "zai/glm-5.3:max"
+      - "kimi-code/k3:max"
+    "google-antigravity/gemini-3.8-flash:high":
+      - "google-antigravity/claude-opus-5-5:high"
+      - "alibaba-token-plan/qwen3.8-flash:medium"
+      - "kimi-code/kimi-for-coding:high"
+    "cursor/composer-2.5:high":
+      - "cursor/composer-2.5-fast:high"
+      - "cursor/cursor-grok-4.6:high"
+    "devin/swe-2":
+      - "devin/swe-1-6"
+      - "devin/swe-1-6-fast"
+    "kimi-code/k3:max":
+      - "kimi-code/k3-256k:max"
+      - "kimi-code/kimi-for-coding:max"
+      - "kimi-code/kimi-k2.5:high"
+    "openai-codex/gpt-6.1-sol:max":
+      - "openai-codex/gpt-6-sol:max"
+      - "openai-codex/gpt-6-astra:max"
+      - "openai-codex/gpt-5.6-sol:max"
+    "zai/glm-5.3:max":
+      - "zai/glm-5.2:max"
+      - "zai/glm-5.1:high"
+      - "zai/glm-5:high"
+      - "alibaba-token-plan/glm-5.2:max"
+
+dev:
+  autoqaConsent: granted
