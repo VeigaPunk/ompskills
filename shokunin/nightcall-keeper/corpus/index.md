@@ -39,3 +39,7 @@ lanes, reports under `.tower/fleets/shokunin3/reports/nightcall-keeper/`).
 | 2026-10-09-test-pins.md | Which dispatcher tests pin the format, and the gaps | 2026-10-09 |
 | 2026-10-09-run-logic-normative.md | run-logic.md nightcall rules mapped to enforcing code | 2026-10-09 |
 | 2026-10-09-l1alias-change-propagation.md | Canonical l1Alias edit: live readers vs mirror-bound build, timing, tower configPath | 2026-10-09 |
+| 2026-10-09-r2-errata.md | Round-2 audit errata: supersedes wrong/stale claims in r1 entries | 2026-10-09 |
+| 2026-10-09-config-flag-equivalence.md | --config ≡ PI_CONFIG_FILES layer on a launched session (observed) | 2026-10-09 |
+| 2026-10-09-advisor-resolution.md | advisor.enabled:true with no advisor role: resolution and the rule conflict | 2026-10-09 |
+| 2026-10-09-reverify-launchers-layering-band.md | Re-verify: native trial has no --config; dispatcher/tower argv; later-overlay wins (probed); HEAD vs WT band | 2026-10-09 |
