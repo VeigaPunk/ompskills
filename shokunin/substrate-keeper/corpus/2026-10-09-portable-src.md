@@ -18,7 +18,7 @@ Source: lane PortableSrc report. Anchor: ufo-fsd-alpha@5ace2559.
 - Build projection: `build:portable` = `rm -rf dist && tsc -p tsconfig.json` (`package.json:15`);
   `include: ["src/**/*.ts"]`, `rootDir: src`, `outDir: dist`; `strict: true`, target ES2022,
   module/moduleResolution NodeNext, `declaration: true`, **`noEmitOnError: true`** (load-bearing:
-  a failed build must not leave importable `dist/`); `run:portable` = `build:portable && node dist/cli.js`
+  a failed build must not leave importable `dist/`); `run:portable` = `npm run build:portable && node dist/cli.js`
   (`:18`). `dist/` consumers: `tests/{empirical,lanes,orchestrator,pareto,planner,
   primeagent-portable-frontier}.test.js`.
 - Boundary enforced in code: `orchestrator.ts:279-281` refuses `config.orchestrator.route !==

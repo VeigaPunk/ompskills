@@ -8,7 +8,7 @@ Source: lane MissionResultHub report. Anchor: ufo-fsd-alpha@5ace2559;
 ## Observed
 
 - Header `:1-4`: "Typed UFO mission-result envelope (evidence/display only). Strict structured
-  evidence; never completion authority or dispatch." **70 exports**, **19 real importers**
+  evidence; never completion authority or dispatch." **66 exported bindings**, **19 real importers**
   (`fleet-dispatcher`, `land-fleet-run`, `primeagent-recovery-assess`, `ufo-l0-monitor(.test)`,
   `ufo-l0-watch(.test)`, `ufo-mission-{activity,lifecycle,observation}`, `ufo-stale-watchdog`,
   `ufo-swarm-collect(.test)`, `ufo-swarm-wave(.test)`, `ufo-watchdog-repend`, and three `tests/` files);

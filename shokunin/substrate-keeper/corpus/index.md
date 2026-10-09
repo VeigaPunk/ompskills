@@ -38,3 +38,5 @@ Seeded from the mission's round-1 research wave (29 lanes, `reports/substrate-ke
 | 2026-10-09-seat-mirrors-and-ports.md | seven seat surfaces, shared verb contract, ports residual | 2026-10-09 |
 | 2026-10-09-conformance-evidence-trees.md | conformance/evidence/drills/reports/tests trees + evidence rules | 2026-10-09 |
 | 2026-10-09-cross-surface-ownership.md | the ownership table, mirror pairs, three-way distinction, drift | 2026-10-09 |
+| 2026-10-09-verification-dispatch.md | four-question re-confirmation: wave band/reader, routing authority+keys, membrane seal/unseal, self-declared gaps | 2026-10-09 |
+| 2026-10-09-r2-corrections.md | round-2 falsification ledger — every corrected claim with its verifier | 2026-10-09 |

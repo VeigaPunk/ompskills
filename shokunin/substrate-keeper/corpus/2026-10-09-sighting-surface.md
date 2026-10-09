@@ -26,8 +26,8 @@ Source: lane SightingScripts report. Anchor: ufo-fsd-alpha@5ace2559
   observation, `ompSessionsRoot` `:22`, `observeMissionTasks` `:384`, `loadObservations` `:493`);
   `surface.mjs` (325 ln — `surface --json` manifest kind `sighting-surface-v1` `:24`, usage `:294`,
   digest over shim+module+4 libs `:13-18,31-45`, `runLegacyNativeDirect` `:318`).
-- The entry imports all four lib modules and re-exports the moved names (`:4706-4714`, "public surface
-  of this module is unchanged"); no lib imports the entry.
+- The entry imports all four lib modules (`ufo-sighting.mjs:27-30`) and re-exports the moved names
+  (`:4709-4714`, public-surface comment `:4709-4710`; the file has 4714 lines); no lib imports the entry.
 
 ## Contract
 

@@ -14,14 +14,16 @@ Source: lane SkillsTree report. Anchor: ufo-fsd-alpha@5ace2559.
   `skills/SHA256SUMS` is sync-generated and excludes itself (`sync-ufo-contracts.mjs:1085-1097`).
 - Mirrors: `ufo/SKILL.md` `4708d14d…` byte-identical across the 7 package roots
   (substrate-omp, kimi, codex, cursor, opencode, grok, devin) + `.omp`, `.cursor`, cursor-native,
-  contract-asset targets (12 tracked clones); `run-logic.md` `ed880f02…` ×11; `wwkd/SKILL.md`
-  `4015a0f4…` ×14 incl. the crate bundle; 5 generated `ufo-skill-scope.json` tags
+  contract-asset targets — **12 copies carrying the digest (11 mirrors + the canonical file)**;
+  `run-logic.md` `ed880f02…` **12 copies (11 mirrors + canonical)**; `wwkd/SKILL.md` `4015a0f4…`
+  **13 copies (12 mirrors + canonical)** — the declared set is 14, the two missing being the
+  uncreated devin targets; 5 generated `ufo-skill-scope.json` tags
   (omp, opencode, codex, grok, kimi) — `README.md:35-37`, `cliFamilyScopes` `sync:178-199`.
 - Live check verdict: `node scripts/sync-ufo-contracts.mjs --check` exits **1** at this checkout —
   `skillsSums`/`packageScopes`/`charterlist`/`projection` OK; drift limited to
   `bundled/omp-seat-routing.json` + `bundled/config.json` (host routes mismatch, sighting surface
-  digest mismatch) and the 18 uncreated, untracked-but-not-gitignored `.devin`/`packages/devin/.devin`
-  native targets — **zero drift on any tracked ufo/wwkd mirror**.
+  digest mismatch) and the 18 uncreated **gitignored** (`.gitignore:33: .devin/`)
+  `.devin`/`packages/devin/.devin` native targets — **zero drift on any tracked ufo/wwkd mirror**.
 - `wwkd` role: planner-stance enrichment; `run-logic §5` (`:946`) is normative, absence never blocks
   activation, drift resolves in §5's favor (I9), not a gate (`ufo/SKILL.md:52-56`, `AGENTS.md:13-15`).
 - Shims: the substrate's `.omp/skills` = `{swarm, tower, ufo, wwkd}` — `ufo`+`wwkd` are sync-generated

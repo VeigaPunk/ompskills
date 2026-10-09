@@ -9,8 +9,10 @@ Source: lane MembraneAndScreening report. Anchor: ufo-fsd-alpha@5ace2559.
   `scripts/collect-omp-native-handoff*`, `scripts/sync-ufo-contracts.mjs`,
   `scripts/run-omp-native-trial.mjs`, `scripts/ufo-sighting*`, `config/ufo.json`,
   `config/the-tick.machine.json`, `skills/ufo/SKILL.md`, `skills/ufo/references/**`,
-  `ssot/godspeed-core/directive.md`. All 11 exist in the tree (`ls -ld`, exit 0); the collector and
-  sighting globs resolve to the `.mjs` file plus `-lib/` dirs; the block is mirrored verbatim in
+  `ssot/godspeed-core/directive.md`. All 11 exist in the tree (`ls -ld`, exit 0); the collector glob
+  resolves to `scripts/collect-omp-native-handoff.mjs` plus `scripts/collect-omp-native-handoff-lib/`,
+  and the sighting glob to `scripts/ufo-sighting` (bash wrapper), `scripts/ufo-sighting.mjs`, and
+  `scripts/ufo-sighting-lib/`; the block is mirrored verbatim in
   `crates/ufo-core-runtime/bundled/config.json`.
 - `membrane.action` = `authority_boundary` — the only admitted spelling (`config.rs:225-238`,
   `lib.rs:869-873` refuse anything else; `config_tests.rs:382-386` pins `"notify"` ⇒ refused).

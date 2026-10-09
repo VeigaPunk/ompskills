@@ -17,7 +17,9 @@ Source: lane ConfigCompanions report. Anchor: ufo-fsd-alpha@5ace2559.
 - `missionFormat` relation: `config/ufo.json:81-86` declares `{id: nightcall,
   configPath: config/mission-nightcall.yml, defaultIterateRounds: 1024, l1Alias: m_strong}`; the
   dispatcher resolves/rejects a non-canonical `configPath` (`fleet-dispatcher.mjs:5755-5767`) and
-  bounded-reads + sha256s the file (`:5769`). The yml itself carries none of those four fields.
+  bounded-reads + sha256s the file (`:5769-5770`; the digest is stored at `:5854`, and the launch
+  side re-reads and compares it at `:8557,8573-8574` → `config_drift`). The yml itself carries none
+  of those four fields.
 - Generated verdict: **all six hand-authored** — no writer exists (`grep writeFileSync …machine.json`
   → none), single copy each (no mirror), all tracked. `*.machine.json` is a machine-readable-policy
   naming convention (schema + exact-key reader), **not** a generation marker. Contrast:
@@ -32,7 +34,7 @@ Source: lane ConfigCompanions report. Anchor: ufo-fsd-alpha@5ace2559.
 | rule | anchor |
 | --- | --- |
 | The fleet overlay path is not a per-task knob — a non-canonical `configPath` is rejected | `fleet-dispatcher.mjs:5766-5767` |
-| The overlay is bound by bytes (bounded read + `configSha256` at enqueue/launch), not key inspection | `:5769` |
+| The overlay is bound by bytes (bounded read + `configSha256` at enqueue/launch), not key inspection | `:5769-5770` (enqueue read+digest, stored `:5854`); `:8557,8573-8574` (launch read + digest compare → `config_drift`) |
 | `*.machine.json` = hand-authored machine-readable policy, not generated output | report §generated |
 | `config/ufo.json` is the only config file with a generated mirror | `sync-ufo-contracts.mjs:1921-1925` |
 

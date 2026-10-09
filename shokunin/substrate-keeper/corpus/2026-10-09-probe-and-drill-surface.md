@@ -47,7 +47,7 @@ Source: lane ProbeAndDrillScripts report. Anchor: ufo-fsd-alpha@5ace2559.
 | --- | --- |
 | The route-health probe is the only sanctioned route prober and is standalone (hand-mirrored redaction table) | `probe-ufo-route-health.mjs:60-63`; `tests/route-probes.test.js` |
 | Verdicts are secret-proofed before emission; `ok` (cleanup) ≠ `healthy` (verdict); exit 0 needs both | `:1078-1185` |
-| A probe that persists evidence fails closed (previous file removed first; exit 2 if the durable write did not complete) | `probe-token-plan-models.mjs:182-184` |
+| The token-plan models probe persists verdicts through an exclusive temporary file, fsync, and rename; if durable writing fails it emits a fail-closed unavailable verdict, attempts to remove the old verdict (or overwrites it in place when unlink is refused), and exits 2 — a successful replacement uses `renameSync` and does not unlink the previous file first | `probe-token-plan-models.mjs:182-184` |
 | Preflight never falls back to a project-local route; unreachable family ⇒ typed `route_unreachable` before the registry is written | `ufo-route-preflight.mjs:143-172` |
 | Isolation is authored, not executed, by `prepare-ephemeral-l1.mjs`; bwrap runs only inside `ufo-sighting` | `ufo-sighting.mjs:4194-4290` |
 | A drill never touches live providers; pending/referenced rows never run; unknown keys fail closed | `ufo-drills.mjs:1-33`, `:588-630` |

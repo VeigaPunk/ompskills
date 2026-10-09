@@ -46,8 +46,11 @@ Source: lane FleetLifecycleScripts report. Anchor: ufo-fsd-alpha@5ace2559.
   `:8790`). No `git` in the dispatcher. No `tower` token in any of the six scripts — the tower
   launcher is an OMP skill whose only substrate coupling is `scripts/ufo-sighting.mjs` and
   `omp worktree`. No `land-fleet-run.test.mjs` (coverage in `prepare-ephemeral-fleet.test.mjs`).
-  Documented dispatcher names `maybeEnqueueIterationSuccessor`/`auto-reap` (`docs/AUTO-SHIP.md:9`)
-  are **absent** from the file.
+  The documented names `maybeEnqueueIterationSuccessor` and `auto-reap` are **present internally**
+  (`maybeEnqueueIterationSuccessor` at `:5513`, called `:7104,:7190,:7223`; `auto-reap` in the
+  reaping logic and notes `:6756,:6762,:6772,:7071-7074,:7128`, with `autoReapFailLatch`/`autoReaped`
+  at `:7009,:9057-9058,:9113-9125,:9362`) but **not exported** — the dispatcher's exports are exactly
+  `redact` `:345` and `resultReceiptValid` `:6564`.
 
 ## Unknowns
 

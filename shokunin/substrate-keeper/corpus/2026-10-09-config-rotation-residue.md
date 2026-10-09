@@ -5,9 +5,12 @@ membrane implication. Source: lane ConfigAuthorityAndBackups report. Anchor: ufo
 
 ## Observed
 
-- 9 files `config/ufo.json.<UTC-stamp>.bak`, stamps 2026-10-08T19:15:32Z … 2026-10-09T01:30:57Z
-  (each stamp equals its own mtime to the millisecond). All untracked (`??`), **not gitignored**,
-  never committed. Whole-tree `find` shows these 9 are the only `*.bak` residue at the root level.
+- 9 files `config/ufo.json.<UTC-stamp>.bak`, stamps 2026-10-08T19:15:32-811Z, 19:59:28-783Z,
+  20:04:48-189Z, 21:49:45-958Z, 21:52:25-277Z, 21:54:13-842Z, 22:05:48-024Z, 2026-10-09T01:14:17-257Z,
+  01:30:57-403Z. Their mtimes sit in the stamp's second/millisecond vicinity but do **not** all equal
+  the filename stamp at millisecond precision (#2 `.784000753` vs `.783Z`; #4 `.959025070` vs `.958Z`;
+  #7 `.025023100` vs `.024Z`). All untracked (`??`), **not gitignored**, never committed. Whole-tree
+  `find` shows these 9 are the only `*.bak` residue at the root level.
 - Content: backup #1 sha256 `1f6b2115…` == git blob `72ab84a8:config/ufo.json`; #2-#9 all
   `7efc813b…` == HEAD `5ace2559` blob; live `ufo.json` `0e416f0a…`, uncommitted. Newest backup's
   mtime equals the live file's mtime to the nanosecond.
@@ -35,7 +38,7 @@ membrane implication. Source: lane ConfigAuthorityAndBackups report. Anchor: ufo
 | --- | --- | --- |
 | `config/ufo.json` is THE machine authority | mission configPath, targets, packages, hooks-extension, budgets, membrane list all derive from it | `check-hand-authored-sets.mjs:89,108-113,118-122`; `docs/ACCESS.md:19` |
 | The gate guards sets, not the authority | `ufo.json` is in no enumerated set; `.bak` matches no filter | `:90,:95` |
-| Rotation-before-write habit | every `ufo.json` write leaves a stamped `.bak` beside it | backup table (direction = inference) |
+| Rotation-before-write habit (**INFERENCE** — the direction is not carried by any source) | every `ufo.json` write appears to leave a stamped `.bak` beside it | backup table |
 | No in-repo writer | exhaustive source search found none | report §4 |
 | Band changes carry commit messages as provenance | 19:15Z edit == `5ace2559`; 01:30Z edit uncommitted | report §3 |
 | `ufo.json` is an operator-owned sense | touching it ⇒ `authority_boundary`; unseal only via TTY `ufo charter sign` + Phase 0 re-pass | `config/ufo.json:24,32,38`; `AGENTS.md:66-71` |

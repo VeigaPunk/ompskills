@@ -6,11 +6,13 @@ Source: lane ConformanceEvidenceTrees report. Anchor: ufo-fsd-alpha@5ace2559.
 ## Observed
 
 - `conformance/` 68 files = `vectors/` 37 `.json` (7 root suites + 10 rule-family dirs) +
-  `fixtures/native-handoff/` 31. Vector shape (quoted):
+  `fixtures/native-handoff/` 31. Vector shape: the gate-shaped suites generally use
   `{suite, rule, description, cases[{id, x-runtime, axes, baseline, candidate, expect.verdict}]}`
-  with family-prefixed case ids (`bnd-01-`, `rd-01-`); validated by
-  `crates/ufo-core-runtime/tests/conformance.rs:3` ("Walks conformance/vectors/**/*.json … asserts
-  ParetoGate::decide / round_stop_outcome / RouteSpec::try_new") and
+  with family-prefixed case ids (`bnd-01-`, `rd-01-`), but `dual-orch/r1-r4.json` is an explicit
+  exception — it uses top-level `membrane`, `exit`, and `policy` sections (with `r1-…` ids) rather
+  than `cases[]`; the Rust and TypeScript consumers discover/validate the gate-shaped `cases` subset.
+  Validated by `crates/ufo-core-runtime/tests/conformance.rs:3` ("Walks conformance/vectors/**/*.json
+  … asserts ParetoGate::decide / round_stop_outcome / RouteSpec::try_new") and
   `packages/ufo-core/src/conformance-vectors.test.ts:10`.
 - `conformance/fixtures/native-handoff/`: flat `<role>-01-{assignment.md, artifact.json,
   transcript.jsonl}` for 10 roles + **one shared** `handoff.json` (not per-role). Machine-emitted by

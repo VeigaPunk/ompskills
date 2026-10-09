@@ -45,12 +45,19 @@ vs hand-authored. Source: lane ContractCheckScripts report. Anchor: ufo-fsd-alph
 | `check-hand-authored-sets.mjs` | set drift of hand-authored roots + card frontmatter lint | nothing (pure scanner) | 4 / 22 |
 | `check-routing-free-config.mjs` | route tables in project config surfaces | nothing (pure scanner) | 5 / 10 |
 
-**Authority map as the battery declares it.** GENERATED: skill/agent mirrors under `packages/*`,
-`.omp`, `.cursor`, `.devin`, `packages/contract-support/assets`, `crates/ufo-core-runtime/bundled/**`,
-`packages/*/ufo-skill-scope.json`, `skills/SHA256SUMS`, `ufo-deps.lock`'s `contractRevision`,
-`.omp/config.yml`, the devin seat files, and the marked seat-routing sections of `AGENTS.md` +
-`docs/L2-L3-ROUTING.md`. HAND-AUTHORED: `skills/ufo/**`, `skills/wwkd/**`, `agents/*.md`,
-`config/ufo.json`, `ssot/godspeed-core/**`, `ufo-deps.lock` authored pins,
+**Authority map as the battery declares it.** GENERATED: the declared `skillTargets` skill mirrors
+(`packages/substrate-omp/skills/ufo`, `.omp/skills/ufo`, `packages/{kimi,codex,cursor,opencode,grok,devin}/skills/ufo`,
+`.cursor/skills/ufo`, `packages/cursor/.cursor/skills/ufo`, `.devin/skills/ufo`,
+`packages/devin/.devin/skills/ufo`, `packages/contract-support/assets/ufo/skills/ufo`); the declared
+`agentTargets` mirrors (`packages/substrate-omp/agents`, `.omp/agents`,
+`packages/{kimi,cursor,devin}/agents`); the six literal directive mirrors plus each skill target's
+`references/godspeed-core/directive.md`; the four bundled asset destinations under
+`crates/ufo-core-runtime/bundled`; the five `packages/{substrate-omp,opencode,codex,grok,kimi}/ufo-skill-scope.json`
+files; `skills/SHA256SUMS`; the `contractRevision` stamp **inside** `ufo-deps.lock` (the lock's
+authored pins are not rewritten by ordinary sync); `.omp/config.yml`; the devin seat files
+(`.devin/agents/ufo-<role>.md`, `packages/devin/.devin/agents/**`); and the marked seat-routing
+sections of `AGENTS.md` + `docs/L2-L3-ROUTING.md`. HAND-AUTHORED: `skills/ufo/**`, `skills/wwkd/**`,
+`agents/*.md`, `config/ufo.json`, `ssot/godspeed-core/**`, `ufo-deps.lock` authored pins,
 `docs/ufo-fsd-charterlist.json`, `config/{l1-max-context.yml,the-tick.machine.json,mission-nightcall.yml}`,
 `.omp/hooks/**` (3 pre hooks + statusline), `substrates/*`, `packages/*`, `.omp/ufo-l1.yml`.
 

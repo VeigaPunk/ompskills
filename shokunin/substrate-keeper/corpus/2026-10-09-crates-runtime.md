@@ -16,8 +16,12 @@ Source: lane CratesRuntime report. Anchor: ufo-fsd-alpha@5ace2559.
 - Node boundary: the seven `substrates/{omp,kimi,codex,cursor,opencode,grok,devin}/bin/cli.mjs`
   delegate once via `packages/substrate-runtime` → spawn `ufo self-iter` → `crates/ufo-cli` → crate
   `LoopDriver`/`judge_handoff`; none implements a judge (`self-iter-delegate.mjs:1-7,293-310`).
-- Bundled mirrors used by `build.rs`: `bundled/{config.json,omp-seat-routing.json,godspeed-core/**,skills/wwkd/**}`
-  (`Cargo.toml include`; `build.rs:1-30`).
+- Bundled mirrors (`Cargo.toml include = ["src/**/*", "bundled/**/*", "build.rs", "Cargo.toml"]`):
+  `build.rs` consumes only `bundled/config.json` (`:155,161`) and `bundled/omp-seat-routing.json`
+  (`:110,165`; `cargo:rerun-if-changed` for those two only, `:157-159`); `bundled/godspeed-core/{directive.md,SHA256SUMS}`
+  is the crate-local fallback read by `godspeed.rs:362-363,412-414` (sums verified `:153-157`), and
+  `bundled/skills/wwkd/SKILL.md` is read by no crate code — both are sync targets of
+  `scripts/sync-ufo-contracts.mjs:109,122-126`.
 - Tests: 5 integration targets (`build_json` 5, `conformance` 1, `loop_driver` 68, `native_handoff` 25,
   `perf_probe` 6 = **105**) + 24 inline `*_tests.rs` modules (**879** `#[test]` across `src/`);
   support module `tests/native_support/mod.rs` (1454 lines, not a target).
@@ -33,7 +37,7 @@ Source: lane CratesRuntime report. Anchor: ufo-fsd-alpha@5ace2559.
 | Lib-only crate; the executable is `ufo-cli`'s `ufo` bin | both `Cargo.toml`s |
 | Seven Node entrypoints delegate once; none judges | `self-iter-delegate.mjs:1-7,293-310`; `main.rs:258,482` |
 | Dispatch/route metadata cannot change the judge implementation identity | `SKILL.md:556-559` |
-| The crate carries bundled mirrors consumed by `build.rs` | `Cargo.toml include`; `build.rs:1-30` |
+| The crate carries bundled mirrors; `build.rs` consumes only the config + seat-routing mirrors | `Cargo.toml include`; `build.rs:110,155,161,165` |
 
 ## Not carried by the source
 

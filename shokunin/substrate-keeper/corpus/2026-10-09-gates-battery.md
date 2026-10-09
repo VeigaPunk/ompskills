@@ -2,7 +2,7 @@
 
 Asked: the gate battery, its ordered stages, the plan helper, and the package.json → file
 resolution. Source: lane GatesAndVerify report. Anchor: ufo-fsd-alpha@5ace2559.
-sha256: `gates.sh` `aa5fcad6…` (1002 lines), `gates-plan.mjs` `594ab249…` (201), `dev-verify.sh`
+sha256: `gates.sh` `aa5fcad6…` (1002 lines), `gates-plan.mjs` `594ab249…` (200), `dev-verify.sh`
 `f4022711…` (28), `smoke.sh` `625fd8ce…` (83).
 
 ## Observed

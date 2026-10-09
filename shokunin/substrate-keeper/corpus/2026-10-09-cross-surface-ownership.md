@@ -9,25 +9,26 @@ report. Anchor: ufo-fsd-alpha@5ace2559 + the ompskills mission worktree.
 | surface | authority | mirror(s) | drift check | anchor |
 | --- | --- | --- | --- | --- |
 | Guidance prose | `skills/ufo/SKILL.md`, `skills/ufo/references/run-logic.md`, `agents/*.md` | 13 skill targets + 5 agent targets incl. `.omp/skills/ufo`, `.omp/agents`, `.cursor/skills/ufo`, `packages/*/…` | `sync --check` byte-equality per declared target (missing/drifted/extra fail) | `AGENTS.md:3-5`; `sync:89-103,169-175,1900-1995` |
-| Judge | `crates/ufo-core-runtime` — the only runtime and only judge | card language; devin profiles (dispatch-shape only) | `check-hand-authored-sets` never-judge lint over every card; devin `--check` | `AGENTS.md:4-5`; `chas.mjs:18-28,39-40` |
+| Judge | `crates/ufo-core-runtime` — the only runtime and only judge | card language; devin profiles (dispatch-shape only) | `check-hand-authored-sets` never-judge lint over every card; devin `--check` | `AGENTS.md:4-5`; `scripts/check-hand-authored-sets.mjs:18-28,39-40` |
 | Godspeed posture (directive) | `ssot/godspeed-core/directive.md` | 10+ named mirrors incl. `godspeed-core/`, `skills/godspeed-core/`, `skills/godspeed/`, crate bundle, `.omp/ssot/`, every package root | byte-channel sync + `ufo-deps.lock` pin + adjacent-SHA256SUMS re-verify in the runtime | `SKILL.md:24-40`; `sync:76,104-114`; `godspeed.rs:66,147-216` |
 | Band/ceiling | `config/ufo.json sighting.dispatch.swarm` (read live) | crate-bundled copy; prose (non-authoritative); host delta on the write side | sync bundled-config byte channel; consumers refuse typed (`too_few_lanes`, `wave_too_wide`, `impossible_band`) | `AGENTS.md:150-167`; `config:88-94`; `ufo-swarm-wave.mjs:778-807` |
 | Routing / seat models | global `~/.omp/agent/config.yml` — the ONLY routing authority; the project declares none | `bundled/omp-seat-routing.json` (derived), `build.rs` role chains, the generated tables in `AGENTS.md`/`L2-L3-ROUTING.md` | `sync-global-routing --check`; `render-seat-tables --check`; `check-routing-free-config` key scan | `AGENTS.md:100-141`; `sync-global-routing.mjs:1-27`; `build.rs:108-110` |
 | Host launch config | `config/ufo.json nativeProfiles.omp-native-v1` | `.omp/config.yml` (whole file, incl. `extensions:`) | `syncOmpProjection` rewrites on any byte diff — hand-added entries silently reverted | `AGENTS.md:35-37`; `sync:1629-1668` |
 | Sighting wall surface | `scripts/ufo-sighting` code | `config/ufo.json sighting.surfaceDigest` | `--check` spawns `surface --json`, recomputes the digest | `sync:52-63,504-508` |
-| Hand-authored sets | `config/ufo.json targets`/`missionFormat.configPath`, AGENTS.md hook enumeration | `config/mission-*.yml`, `.omp/hooks/**`, `substrates/*`, `packages/*` | `check-hand-authored-sets.mjs` planted-or-missing file fails closed | `chas.mjs:1-29,35` |
+| Hand-authored sets | `config/ufo.json targets`/`missionFormat.configPath`, AGENTS.md hook enumeration | `config/mission-*.yml`, `.omp/hooks/**`, `substrates/*`, `packages/*` | `check-hand-authored-sets.mjs` planted-or-missing file fails closed | `scripts/check-hand-authored-sets.mjs:1-29,35` |
 | State ledger | run processes under `.ufo/**` | none — by design | none; ephemeral + gitignored; liveness judged by transcript mtime | `AGENTS.md:325-327,343-345` |
-| Fleet artifacts | dispatcher/wave planner output under `.tower/fleets/**` (ompskills) | `evidence/**` dumps (substrate) are retained provenance | none — data, never instruction | `AGENTS.md:72-76`; `README.md:132-135` |
+| Fleet artifacts | dispatcher/wave planner output under `.tower/fleets/**` (an **ompskills** surface, not a substrate path) | `evidence/**` dumps (substrate) are retained provenance | none — data, never instruction | `AGENTS.md:72-76`; `README.md:132-135` |
 | Membrane | `config/ufo.json membrane.paths` | — (11 patterns) | accepted touch emits `authority_boundary`; operator charter re-pass | `config:25-36`; `AGENTS.md:66-71` |
 
 Generated-file convention: marker-borne (`AGENTS.md:115-128` and `docs/L2-L3-ROUTING.md:227` sit
 between `BEGIN/END GENERATED: seat-routing` markers; `render-seat-tables.mjs` regenerates; `--check`
 exits 1 on diff); whole-file generated (`.omp/config.yml`, `skills/SHA256SUMS`,
-`ufo-deps.lock.contractRevision`, `crates/ufo-core-runtime/bundled/**`, every skill/agent/dep mirror
-target, `.devin/` + `packages/devin/.devin/` profiles); `npm run contracts:sync` = the three
-generators, `contracts:check` = the five verifiers. Fresh-clone rule: `missing` on gitignored
-generated roots is absent-generator state, not drift (`AGENTS.md:88-96`). Validated-but-hand-authored
-exception: `docs/ufo-fsd-charterlist.json`.
+`crates/ufo-core-runtime/bundled/**`, every declared skill/agent/dependency mirror target, `.devin/` +
+`packages/devin/.devin/` profiles), plus one generated **field** — `ufo-deps.lock.contractRevision`
+(the lock's authored pins are deliberate and not rewritten by ordinary sync); `npm run contracts:sync`
+= the three generators, `contracts:check` = the five verifiers. Fresh-clone rule: `missing` on
+gitignored generated roots is absent-generator state, not drift (`AGENTS.md:88-96`).
+Validated-but-hand-authored exception: `docs/ufo-fsd-charterlist.json`.
 
 Three-way distinction, one chain per example:
 1. **Source** (authored authority, in git, hand-edited as a deliberate diff): `ssot/godspeed-core/directive.md`

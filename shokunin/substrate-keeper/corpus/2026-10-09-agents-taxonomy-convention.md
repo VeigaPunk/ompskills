@@ -10,12 +10,17 @@ ompskills worktree `.omp/agents/` (8 first-tranche shokunin cards).
 - Substrate `agents/*.md` (13): uniform frontmatter `name` + `description` + `ufo: true`; **zero**
   `tools` and **zero** `model` keys; exactly one `spawns` key in the tree — `executor.md:5
   spawns: labrat` (carve-out quoted at `executor.md:30-33`, mirror rule `labrat.md:14`). Bodies:
-  single H1 `# UFO-FSD <role>`, a mission sentence, bullets, and a terminal
-  `Return: … Stop after …` line (revenger lacks the sentence). The frozen four
+  single H1 `# UFO-FSD <role>`, a mission sentence, bullets, and a terminal bound line —
+  `Return: …` plus a stop clause; 10/13 read `Return: … Stop after …` exactly (`distiller.md:17`
+  ends "Stop before judgment.", `simplifier.md:24` ends "Stop when the next deletion would harm an
+  axis.", `reviewer.md:27` reads "Return findings by severity, then residual risk and verification
+  gaps. Stop when no actionable finding remains in scope.") (revenger lacks the sentence). The frozen four
   (planner/distiller/labrat/Main) are **not** enumerated in the cards — the set phrase lives at
-  `scripts/ufo-swarm-wave.mjs:256-269`, `.omp/skills/swarm/SKILL.md:60`, `native_schema.rs:77-80`,
-  `BEHAVIOR-MATRIX.md:176`; `config/ufo.json` carries no `proposalRoleTaxonomy` key.
-- Worktree `.omp/agents/` (8): frontmatter exactly `name`/`description`/`tools` (tools set
+  `scripts/ufo-swarm-wave.mjs:256-269`, `.omp/skills/swarm/SKILL.md:60`,
+  `crates/ufo-core-runtime/src/native_schema.rs:77-80`, `docs/BEHAVIOR-MATRIX.md:176`;
+  `config/ufo.json` carries no `proposalRoleTaxonomy` key.
+- Mission worktree `.omp/agents/` (an **ompskills** surface, not the substrate; 8 first-tranche cards
+  at the round-1 anchor, 9 once this deliverable lands): frontmatter exactly `name`/`description`/`tools` (tools set
   `{read,grep,glob,bash,write,edit}` in all 8, CSV and flow-array variants); **0/8** carry `model`,
   `spawns`, or `ufo`; all carry the three H2 sections `The specialization` / `The corpus protocol` /
   `The bounds` (line-anchored per card). Naming: substrate = bare role words; worktree = domain

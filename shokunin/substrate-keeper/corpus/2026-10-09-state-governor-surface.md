@@ -8,11 +8,13 @@ Source: lane StateGovernorScripts report. Anchor: ufo-fsd-alpha@5ace2559.
 - Verdict: `ufo-state-census.mjs` is a **pure observer** (header `:12`; imports only `lstatSync`,
   `readdirSync`; exports `CENSUS_SCHEMA` `:22`, `censusState` `:28`; flags `--state-dir/--top/--max-entries`).
   `ufo-mission-lifecycle.mjs`, `-activity.mjs`, `-observation.mjs` are pure projections with **no
-  filesystem surface** — they read only caller JSON (`mission-lifecycle.mjs:2` "Display evidence only.
-  The wall/dispatcher still own every lifecycle mutation"; `mission-activity.mjs:9` "Inputs are not
-  mutated"; `mission-observation.mjs:4` "Pure projection only"). `ufo-state-retention.mjs` is the only
-  mutator, and only under `--apply` behind its single-instance lock (`:2015-2027`; verbs `cap`, `sweep`,
-  `watch` `:4-27`; exports `CAP_BYTES 100 MiB` `:80`, `RUN_BASH_LOG_CAP_BYTES 1 GiB` `:81`,
+  `.ufo` state access** — they read only caller JSON through bounded filesystem helpers
+  (`mission-lifecycle.mjs:2` "Display evidence only. The wall/dispatcher still own every lifecycle
+  mutation"; `mission-activity.mjs:9` "Inputs are not mutated"; `mission-observation.mjs:4` "Pure
+  projection only"). **Retention is the only state-governor mutator: `cap` and `sweep` mutate only
+  when invoked with `--apply`, under the state-root retention lock; `watch` has no `--apply` flag,
+  acquires a per-session lock, and internally runs `capSession` with `apply: true`** (`:4-27`,
+  `:2015-2027`; exports `CAP_BYTES 100 MiB` `:80`, `RUN_BASH_LOG_CAP_BYTES 1 GiB` `:81`,
   `sweepSessions` `:1410`, `parseArgs` `:1956`, `runCli` `:2029`).
 - Tests: census 3; retention 26; activity 5; observation 4; lifecycle has **no sibling** — its CLI is
   pinned by `tests/mission-adaptations.test.js:724-902`.
@@ -23,7 +25,8 @@ Source: lane StateGovernorScripts report. Anchor: ufo-fsd-alpha@5ace2559.
   dispatcher); `fleet-ledger.jsonl` (run-logic `:2392-2395`); `rounds/<runId>/r<NN>-digest.json`
   (`ufo-round-digest-v1`, run-logic `:127-128`); `results/` round reports (`THE-TICK.md:54-56`);
   `reclaim/` manifests (`ufo-runtime-reclaim-v1`, retention `:182`); `stale-watchdog-state.json` /
-  `night-watchdog-repends.json`; `drills/<id>/` + `drills/summary.json` (`config/ufo.json:12`).
+  `night-watchdog-repends.json`; `drills/<id>/` (`config/ufo.json:10-12` establishes the drill-evidence
+  path; `drills/summary.json` is not established by that cited source).
 - Layout doctrine: run artifacts (sessions, scopes, results, dispatch snapshots) are gitignored and
   pruned at completion — "No artifact piles; stale run output is laggard, not evidence"
   (`AGENTS.md:343-345`). The debloat audit measured ~175 GB in gitignored `.ufo/`

@@ -12,20 +12,23 @@ Source: lane HandoffAndTrialScripts report. Anchor: ufo-fsd-alpha@5ace2559.
   `MAX_HANDOFF_BYTES` (16 MiB) `:1775-1782`; evidence tree beside the output
   (`evidence/l1-plan.json`, `evidence/assignments/<seat>.md`, `evidence/transcripts/<seat>.jsonl`,
   `<seat>-raw-transcript.jsonl`) `:371-377,1042-1047`.
-- `collect-omp-native-handoff-lib/`: `base.mjs` 955 ln (~55 consts + ~31 funcs; import-free family
-  root), `events.mjs` 383 (transcript intake, `readJsonl`, `effectiveTaskAssignment`, `taskCalls`,
-  `taskDispatches`), `evidence.mjs` 1163 (attempt ledgers, seats, launch, cost, routing health,
-  receipt digests), `policy.mjs` 924 (routes, mirror, deadlines, recovery, plan, axes, rate card;
-  `loadCanonicalDirective` `:872-874` + mirror-drift check `:894`), `screening.mjs` 745
-  (`DEFAULT_SCREENING_CLASSES`, `screenArtifactTexts`).
+- `collect-omp-native-handoff-lib/`: `base.mjs` 955 ln (import-free family root; **47 exported
+  constants + 31 exported functions = 78 exported declarations**), `events.mjs` 383 (transcript
+  intake, `readJsonl`, `effectiveTaskAssignment`, `taskCalls`, `taskDispatches`), `evidence.mjs` 1163
+  (attempt ledgers, seats, launch, cost, routing health, receipt digests), `policy.mjs` 924 (routes,
+  mirror, deadlines, recovery, plan, axes, rate card; `loadCanonicalDirective` `:872-874` +
+  mirror-drift check `:894`), `screening.mjs` 745 (`DEFAULT_SCREENING_CLASSES`, `screenArtifactTexts`).
 - `scripts/run-omp-native-trial.mjs` (4304 ln, sha256 `848502bf…`): the launcher — argv
   `--run-id ID [--interactive|--headless|--no-wall|--prepare-only] [--run-dir] [--session-dir]
   [--ufo] [--wave-size N] [--fleet NAME] [--profile NAME] [--round N] [--predecessor-run ID]`;
   exports `PROFILE=omp-native-v2`, `RESILIENT_PROFILE=omp-native-resilient-v1`,
   `ADMITTED_PROFILES=[v2,resilient]`, `parseArgs`, `planLaunchMode`, `resolveNativeDispatchPolicy`, …
-- Envelope keys: `profile, run_id, round, substrate, concurrency, concurrency_semantics, axes,
-  axes_hash, contract_hash, contract_root, config_digest, proposal_seats, probe_parent, agents,
-  proposals, integrated_candidate, candidate_digest, candidate_receipt, baseline, provenance, telemetry`.
+- Envelope construction unconditionally includes `profile, run_id, round, substrate, concurrency,
+  concurrency_semantics, axes, axes_hash, contract_hash, contract_root, config_digest, plan_digest,
+  acceptance_criteria, plan_path, plan_wave_size, cost_ledger, proposal_seats, probe_parent, agents,
+  proposals, integrated_candidate, candidate_digest, candidate_receipt, baseline, provenance,
+  telemetry`; `attempt_ledger` and `dispatch_attempts` are resilient-profile-only, and
+  `effective_launch` is emitted when effective-launch evidence exists.
 - Timeout cross-check (the assigned claim): `config/ufo.json:140` note says `orchestratorMs` is
   7200000 because the launcher's `OMP_RUN_TIMEOUT_MS` (2h5m, "scripts/run-omp-native-trial.mjs:85-91")
   would otherwise kill a longer-bounded orchestrator lane first. The constant is at **`:120`**:

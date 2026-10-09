@@ -8,8 +8,10 @@ Anchor: ufo-fsd-alpha@5ace2559, `config/ufo.json` sha256 `0e416f0abc559e9a…`, 
 ## Observed
 
 - `ls scripts | wc -l` → **87** root entries (83 files + 4 dirs); `find scripts -type f | wc -l` → **101**
-  (73 `.mjs`, 8 `.sh`, 1 `.json`, 1 extensionless executable bash `ufo-sighting`). Subdir files: 18
-  (`charter-scribe/` 5, `collect-omp-native-handoff-lib/` 5, `lean-cargo/` 4, `ufo-sighting-lib/` 4).
+  (83 root files: 73 `.mjs`, 8 `.sh`, 1 `.json`, 1 extensionless executable bash `ufo-sighting`;
+  18 subdir files: 10 `.mjs`, 3 `.sh`, 1 `.json`, 1 `.txt`, 1 `.md`, 1 `.service`, 1 `.timer`).
+  Subdir files: 18 (`charter-scribe/` 5, `collect-omp-native-handoff-lib/` 5, `lean-cargo/` 4,
+  `ufo-sighting-lib/` 4).
 - `scripts/ufo-sighting` is a **file** (bash shim), not a directory.
 - Import targets by frequency: `ufo-mission-result.mjs` (20), `base.mjs` (10),
   `omp-global-config.mjs` (9), `ufo-native-names.mjs` (7), `ufo-credential-screen.mjs` (7),

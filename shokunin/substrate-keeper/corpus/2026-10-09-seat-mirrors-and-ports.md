@@ -19,9 +19,11 @@ Source: lane PackagesSeatMirrors report. Anchor: ufo-fsd-alpha@5ace2559.
   mustNotJudge, status, lkg, note` — `role=native-surface`, `judgeId=ufo`, `mustNotJudge=true`,
   `status=local`; `hostCli` = omp/opencode/codex/grok/kimi/cursor-agent/devin.
 - Shared verb contract (one contract, seven identical adapters): universal verbs `doctor`,
-  `capabilities`, `selfcheck`, `version`, `self-iter` (`packages/substrate-lib/schemas/substrate-capabilities.json:8-14`);
-  exits 0/1/2/5; `help` implemented but **extra** (`package-verbs.mjs:16-23`); `self-iter` delegates
-  `ufo self-iter --substrate <seat>` (`lane-cli.mjs:194`, `self-iter-delegate.mjs:300`).
+  `capabilities`, `selfcheck`, `version`, `self-iter`
+  (`packages/substrate-lib/schemas/substrate-capabilities.json`, the array at lines 5-11; exit
+  contract `:12-17`); exits 0/1/2/5; `help` implemented but **extra** (`package-verbs.mjs:16-23`);
+  `self-iter` delegates `ufo self-iter --substrate <seat>` (`lane-cli.mjs:194`,
+  `self-iter-delegate.mjs:300`).
 - The five-of-seven scope-tag claim is **VERIFIED TRUE**: exactly 5 tags
   (`packages/{codex,grok,kimi,opencode,substrate-omp}/ufo-skill-scope.json` =
   `{schema_version:1, skill:"ufo", package_scope:<seat>}`); cursor+devin untagged; matches
