@@ -23,7 +23,9 @@
  *     removed by the operator with the exact per-path command this tool
  *     prints, never automatically;
  *   - never edit anything under `<ufoRoot>`; writes land only under
- *     `<stateDir>`, `<worktreeRoot>`, and the mission worktrees;
+ *     `<stateDir>`, `<worktreeRoot>`, and the mission worktrees — and both
+ *     write roots are refused (INVALID_SPEC) when their realpath lands inside
+ *     the substrate, on the repo root, or inside the repo's `.git`;
  *   - every shell-out is `spawnSync` with an explicit argv array — no shell
  *     strings built from spec content;
  *   - the omp argv stays interactive (no `-p`/`--print`, no `--mode`), and
@@ -67,6 +69,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -191,6 +194,42 @@ function scopeOverlaps(a, b) {
     && short.every((part, index) => long[index] === part);
 }
 
+/** Resolve a path that may not exist yet by realpath-ing its deepest existing
+ * ancestor: a symlinked parent must not smuggle the result somewhere else. */
+function realpathDeepest(target) {
+  let current = path.resolve(target);
+  const tail = [];
+  while (!existsSync(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    tail.unshift(path.basename(current));
+    current = parent;
+  }
+  try {
+    return path.resolve(realpathSync(current), ...tail);
+  } catch {
+    return path.resolve(target);
+  }
+}
+
+/** A write root must never reach into the substrate or the repo's own git
+ * plumbing — the two places the safety contract forbids, both reachable
+ * through a spec field or a symlinked parent. The check runs on the realpath,
+ * so `ln -s <ufoRoot> …` cannot launder the write. */
+function assertSafeWriteRoot(value, field, repo, ufoRoot) {
+  const resolved = realpathDeepest(value);
+  const inside = (child, parent) => child === parent || child.startsWith(parent + path.sep);
+  if (inside(resolved, ufoRoot)) {
+    typed("INVALID_SPEC", `${field} ${value} resolves inside ufoRoot ${ufoRoot} — the substrate is never written`);
+  }
+  if (resolved === repo) {
+    typed("INVALID_SPEC", `${field} ${value} resolves to the repo root itself — declare a subdirectory`);
+  }
+  if (inside(resolved, path.join(repo, ".git"))) {
+    typed("INVALID_SPEC", `${field} ${value} resolves inside the repo's .git directory`);
+  }
+}
+
 function gitHeadBranch(repo) {
   const result = run(["git", "-C", repo, "rev-parse", "--abbrev-ref", "HEAD"]);
   const branch = (result.stdout || "").trim();
@@ -274,6 +313,11 @@ function loadSpec(specPath, authority) {
   const maxTime = raw.maxTime === undefined ? "3h" : String(raw.maxTime).trim();
   if (!MAXTIME_PATTERN.test(maxTime) || maxTime.startsWith("-")) typed("INVALID_SPEC", `maxTime ${JSON.stringify(raw.maxTime)} is not a safe token`);
 
+  const stateDir = resolveRepoPath(repo, raw.stateDir ?? `.tower/fleets/${raw.fleet}`, "stateDir");
+  const worktreeRoot = resolveRepoPath(repo, raw.worktreeRoot ?? `.tower/worktrees/${raw.fleet}`, "worktreeRoot");
+  assertSafeWriteRoot(stateDir, "stateDir", repo, ufoRoot);
+  assertSafeWriteRoot(worktreeRoot, "worktreeRoot", repo, ufoRoot);
+
   return {
     fleet: raw.fleet,
     repo,
@@ -281,8 +325,8 @@ function loadSpec(specPath, authority) {
     base,
     roundCeiling,
     maxTime,
-    stateDir: resolveRepoPath(repo, raw.stateDir ?? `.tower/fleets/${raw.fleet}`, "stateDir"),
-    worktreeRoot: resolveRepoPath(repo, raw.worktreeRoot ?? `.tower/worktrees/${raw.fleet}`, "worktreeRoot"),
+    stateDir,
+    worktreeRoot,
     missions: normalized,
   };
 }
@@ -420,7 +464,12 @@ function wallRowId(row) {
 
 /** The wall's own liveness answer. `levels.l1` is `isLiveStatus(status)` in the
  * wall's mission view; `phase` is the same status in its five-bucket
- * vocabulary. Prefer the numeric level, fall back to the phase. */
+ * vocabulary. Prefer the numeric level — it is the manifest truth, and the
+ * dispatcher's observation sidecar can leave a manifest-live row with a
+ * non-live phase. The phase fallback stays for a row that carries no level at
+ * all: an unclassifiable row must never read as "dead" and be completed
+ * without `--force`. (Every row today carries both; verified against
+ * `missionView` in ufo-sighting.mjs.) */
 function wallRowLive(row) {
   if (row === undefined || row === null) return false;
   const l1 = row.levels?.l1;
@@ -580,6 +629,7 @@ function verbLaunch(spec, authority, options) {
       paneReused: false,
       panePhase: null,
       promptReused: false,
+      worktreeReused: false,
       launchResult: null,
     };
 
@@ -651,9 +701,11 @@ function verbLaunch(spec, authority, options) {
       record.skills.push({ name: skill, source });
     }
 
-    // 4. prompt into the state dir (+ per-mission session dir). Byte-identical
-    //    content is left untouched, so a relaunch neither clobbers an
-    //    operator-edited prompt nor churns the file.
+    // 4. prompt into the state dir (+ per-mission session dir). The rendered
+    //    prompt is the source of truth, so a relaunch regenerates it from the
+    //    spec; only byte-identical content is left untouched (no churn, and
+    //    `promptReused` records which happened — a hand-edited prompt is
+    //    overwritten).
     const sessionsDir = path.join(spec.stateDir, "sessions", row.id);
     mkdirSync(sessionsDir, { recursive: true });
     const existingPrompt = existsSync(row.promptPath) ? readFileSync(row.promptPath, "utf8") : null;
