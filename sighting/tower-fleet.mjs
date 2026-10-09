@@ -554,7 +554,12 @@ function verbLaunch(spec, authority, options) {
   if (opened.status !== 0) {
     typed("WALL_OPEN_FAILED", `bash ${wallCliPath} open exited ${opened.status}: ${(opened.stderr || opened.stdout).slice(0, 400)}`);
   }
-  const existingByRunId = new Map(wallRowsForFleet(spec, readWall(spec)).map((wallRow) => [wallRowId(wallRow), wallRow]));
+  // Adoption is keyed by run id across the WHOLE manifest, not this fleet's
+  // rows: the wall reserves a run id globally (`ensureUniqueMission` scans
+  // every fleet), so a row that holds our id blocks a fresh launch regardless
+  // of the fleet it was registered under.
+  const wall = readWall(spec);
+  const existingByRunId = new Map((wall.missions ?? []).map((wallRow) => [wallRowId(wallRow), wallRow]));
   mkdirSync(spec.stateDir, { recursive: true });
 
   const records = [];
@@ -626,6 +631,9 @@ function verbLaunch(spec, authority, options) {
       record.panePhase = wallRowPhase(existing);
       record.paneReused = true;
       warn(`mission ${row.id} is already on the wall (${record.panePhase}) — reusing pane ${record.paneId ?? "?"}, not relaunching`);
+      if ((existing.fleet ?? null) !== spec.fleet) {
+        warn(`mission ${row.id} is registered under fleet ${existing.fleet ?? "(none)"}, not ${spec.fleet} — reusing the wall row as-is`);
+      }
       if (!existsSync(row.worktree)) {
         warn(`mission ${row.id} reuses a wall row but its worktree ${row.worktree} is missing`);
       }
