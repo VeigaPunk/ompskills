@@ -564,7 +564,7 @@ say("scopes — accepted spellings normalize to one prefix");
     if (!check(`scope ${JSON.stringify(raw)} exit 0`, result.status === 0, `got ${result.status}; stderr ${result.stderr.slice(0, 200)}`)) continue;
     const row = JSON.parse(result.stdout).missions[0];
     check(`scope ${JSON.stringify(raw)} echoes normalized prefix`, JSON.stringify(row.scope) === JSON.stringify([expected]), JSON.stringify(row.scope));
-    check(`scope ${JSON.stringify(raw)} prompt scope line`, row.prompt.includes(`| scope | ${expected} — never edit outside it |`), "scope line");
+    check(`scope ${JSON.stringify(raw)} prompt scope line`, row.prompt.includes(`| scope | ${expected} — the only repo paths you may edit;`), "scope line");
   }
   // Different spellings of the same prefix are kept verbatim and in argv order (no dedup).
   const combined = launcher(["plan", "--spec", writeSpec(baseSpec({
@@ -575,7 +575,7 @@ say("scopes — accepted spellings normalize to one prefix");
     check("scope combined echoes normalized entries in order",
       JSON.stringify(row.scope) === JSON.stringify(["src", "src", "src", "src", "src/a"]), JSON.stringify(row.scope));
     check("scope combined prompt scope line",
-      row.prompt.includes("| scope | src, src, src, src, src/a — never edit outside it |"), "scope line");
+      row.prompt.includes("| scope | src, src, src, src, src/a — the only repo paths you may edit;"), "scope line");
   }
   // Normalization runs before the overlap gate: differently spelled equal prefixes collide.
   expectTyped("scope overlap ./src vs src/", launcher(["plan", "--spec", writeSpec(baseSpec({
@@ -1003,21 +1003,21 @@ say("render fidelity — path placeholders bind to their template lines");
       const worktree = path.join(TREES_DIR, row.id);
       const reportDir = path.join(STATE_DIR, "reports", row.id);
       const validator = path.join(UFO_ROOT, "scripts", "ufo-swarm-wave.mjs");
-      const lines = row.prompt.split("\n");
-      const at = (line) => lines[line - 1] ?? "";
-      // Rendering substitutes in place, so prompt line N is template line N.
-      check("prompt:39 repo", at(39) === `| repo | \`${REPO}\` |`, at(39));
-      check("prompt:40 worktree", at(40) === `| worktree | \`${worktree}\` (your cwd; commit here) |`, at(40));
-      check("prompt:41 base", at(41) === `| base | \`${BASE}\` |`, at(41));
-      check("prompt:45 validator", at(45) === `| validator | \`node ${validator}\` (\`plan\` / \`run\`) |`, at(45));
-      check("prompt:46 stateDir", at(46) === `| state dir | \`${STATE_DIR}\` |`, at(46));
-      check("prompt:47 reportDir", at(47) === `| lane reports | \`${reportDir}\` |`, at(47));
-      check("prompt:66 UFO_PROJECT_ROOT", at(66) === `   UFO_PROJECT_ROOT="${STATE_DIR}" \\`, at(66));
-      check("prompt:67 ufoRoot config path", at(67) === `   UFO_CONFIG_PATH="${path.join(UFO_ROOT, "config", "ufo.json")}" \\`, at(67));
-      check("prompt:69 validator in run recipe", at(69) === `     node ${validator} plan --spec <spec.json>`, at(69));
-      check("prompt:79 reportDir prose", at(79) === `5. **Collect.** Every lane writes its scoped report under \`${reportDir}\`; a`, at(79));
-      check("prompt:83 worktree prose", at(83) === `   in \`${worktree}\` with path-scoped commits`, at(83));
-      check("prompt:94 repo in worktree-add", at(94) === `  (\`omp worktree add -C ${REPO} -b ${row.branch}/<lane> <path>\`)`, at(94));
+      const prompt = row.prompt;
+      // Content-based: the template's line layout is incidental, so assert the
+      // rendered values, never their line numbers.
+      check("prompt identity repo", prompt.includes(`| repo | \`${REPO}\` |`), "repo row");
+      check("prompt identity worktree", prompt.includes(`| worktree | \`${worktree}\` (your cwd; commit here) |`), "worktree row");
+      check("prompt identity base", prompt.includes(`| base | \`${BASE}\` |`), "base row");
+      check("prompt identity validator", prompt.includes(`| validator | \`node ${validator}\` (\`plan\` / \`run\` / \`record\`) |`), "validator row");
+      check("prompt identity stateDir", prompt.includes(`| state dir | \`${STATE_DIR}\` |`), "state dir row");
+      check("prompt identity reportDir", prompt.includes(`| lane reports | \`${reportDir}\` |`), "lane reports row");
+      check("prompt recipe project root", prompt.includes(`UFO_PROJECT_ROOT="${STATE_DIR}" \\`), "project root env");
+      check("prompt recipe config path", prompt.includes(`UFO_CONFIG_PATH="${path.join(UFO_ROOT, "config", "ufo.json")}" \\`), "config path env");
+      check("prompt recipe validator", prompt.includes(`node ${validator} plan --spec <spec.json>`), "validator recipe");
+      check("prompt collect step", prompt.includes("5. **Collect.**"), "collect step");
+      check("prompt integrate worktree", prompt.includes(`Integrate accepted work yourself in \`${worktree}\``), "integrate prose");
+      check("prompt worktree-add repo", prompt.includes(`omp worktree add -C ${REPO} -b`), "worktree-add repo");
     }
   }
 }
