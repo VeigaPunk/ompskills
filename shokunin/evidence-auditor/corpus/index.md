@@ -36,3 +36,4 @@ Read this index first, then the entries relevant to the assignment.
 | 2026-10-09-honesty-claims-audit.md | adversarial audit of the shokunin fleet's own receipts (lane counts backed; second-order numbers drifted) | 2026-10-09 |
 | 2026-10-09-r2-verification-errata.md | round-2 errata: 23 standing contradictions + 2 rejected verification findings; card amended | 2026-10-09 |
 | 2026-10-09-verify-amended-card.md | re-verification: card path inventory present/tracked; `.gitignore` bullet's two `git grep` rc/output match wording | 2026-10-09 |
+| 2026-10-09-receipt-limits-audit.md | honest-limits audit of all 31 shokunin receipts; 3 flagged missing the slot (mission-keeper-r1, test-smith-r1, godspeed-keeper-r1) | 2026-10-09 |

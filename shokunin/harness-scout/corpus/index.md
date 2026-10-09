@@ -50,3 +50,4 @@ on the live docs plus the compiled bundle `/home/vgpnk/.local/bin/omp` (`18.8.6`
 | 2026-10-09-r2-verification-corrections.md | r2 verification corrections (append-only ledger) | 2026-10-09 |
 | 2026-10-09-verify-card-r2.md | verification: round-2 card fixes (five claims, all CONFIRMED) | 2026-10-09 |
 | 2026-10-09-project-user-agent-precedence.md | project/user agent collision precedence verification | 2026-10-09 |
+| 2026-10-09-agent-discovery-and-validity.md | task-agent discovery roots, dedup, invalid-vs-shadowed | 2026-10-09 |

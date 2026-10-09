@@ -48,3 +48,4 @@ Seeded from the mission's round-1 research wave (32 lanes,
 | 2026-10-09-card-corpus-convention.md | the card frontmatter/body-section and corpus index/entry convention to match | 2026-10-09 |
 | 2026-10-09-verification-dispatch.md | the card's first dispatch on a bounded task, and the observed result | 2026-10-09 |
 | 2026-10-09-r2-corrections.md | round-2 falsification ledger — every corrected claim with its verifier lane | 2026-10-09 |
+| 2026-10-09-guarantee-enforcement-loci.md | which guarantees the env file enforces, which bwrap enforces, which are policy-only | 2026-10-09 |

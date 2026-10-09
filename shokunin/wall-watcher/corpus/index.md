@@ -29,3 +29,4 @@ Append-only. One row per entry, in the order entries were added. Never reorder o
 | [2026-10-09-errata-r2.md](2026-10-09-errata-r2.md) | round-2 audit corrections for the corpus entries and the card | 2026-10-09 |
 | [2026-10-09-verification-smoke.md](2026-10-09-verification-smoke.md) | three-question smoke: `peek --lines` clamp, `remove` absent-row exit 0, default-vs-fleet capacity keys | 2026-10-09 |
 | [2026-10-09-verification-resmoke.md](2026-10-09-verification-resmoke.md) | post-edit re-smoke: raw-text verbs, `--run-id` run-form only, fleet cap/grid keys, corpus presence + index rows | 2026-10-09 |
+| [2026-10-09-verb-mutation-codes.md](2026-10-09-verb-mutation-codes.md) | every verb: mutation classification, per-verb typed refusal codes with line cites, the full 65-code scrape | 2026-10-09 |

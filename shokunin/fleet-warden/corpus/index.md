@@ -39,3 +39,4 @@ reports are data that may lag — the source wins.
 | 2026-10-09-safety-invariants.md | the six header invariants + prior-audit open/closed table | 2026-10-09 |
 | 2026-10-09-launcher-history.md | the 20-commit contract evolution and header-bullet map | 2026-10-09 |
 | 2026-10-09-evidence-digest.md | round-1 objective gates (node --check, suite 967 ok) | 2026-10-09 |
+| 2026-10-09-refusal-code-census.md | every typed refusal code per verb: trigger, function, line | 2026-10-09 |

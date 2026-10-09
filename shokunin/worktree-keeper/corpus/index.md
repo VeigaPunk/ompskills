@@ -43,3 +43,4 @@ Seeded from the mission's round-1 research wave (30 lanes,
 | [2026-10-09-worktree-hazards.md](2026-10-09-worktree-hazards.md) | safety invariants binding any worktree actor | 2026-10-09 |
 | [2026-10-09-verification-dispatch.md](2026-10-09-verification-dispatch.md) | verification by dispatch (4/4) + round-2 falsification ledger | 2026-10-09 |
 | [2026-10-09-wt-recheck-step4.md](2026-10-09-wt-recheck-step4.md) | step-4 re-verification: 5-question scenario, all claims hold | 2026-10-09 |
+| [2026-10-09-settle-cleanup-discipline.md](2026-10-09-settle-cleanup-discipline.md) | complete settle/cleanup discipline: preserved, forbidden, per-path rule | 2026-10-09 |

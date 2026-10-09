@@ -45,3 +45,4 @@ mission's round-1 research wave (30 lanes, `reports/ledger-keeper/`).
 | 2026-10-09-type-surface.md | `primeagent-refinement.d.mts` declared contract and its runtime disagreements | 2026-10-09 |
 | 2026-10-09-verify-dispatch-probes.md | creation-verification dispatch: scratch-root CLI probes (append/read-successor/validate), refusal exit 2, no exit 64 | 2026-10-09 |
 | 2026-10-09-r2-corrections.md | round-2 falsification ledger — every corrected claim with its verifier, plus the card-side fixes | 2026-10-09 |
+| 2026-10-09-persistence-invariants.md | the five persistence guarantees (bounds, shape, chain, screening, parent-scoping) each cited into the module with fresh anchors | 2026-10-09 |

@@ -38,3 +38,4 @@ lines). Seeded from mission `godspeed-keeper` round-1 research wave (22 lanes,
 | 2026-10-09-axes-admission.md | axis set, unmeasured=fail-closed paths, accept/reject test, re-score semantics | 2026-10-09 |
 | 2026-10-09-verify-resolved-skill.md | re-verification: host `1d616723…` (869 B) resolves, substrate `c0d2232a…` (1242 B) does not; no project-scope godspeed skill | 2026-10-09 |
 | 2026-10-09-r2-adversarial-audit.md | 18-lane falsification audit; corrected census scope, mirror classification, manifest-pin wording, anchors, UNKNOWN precedence, composition conditional, and consumer rules | 2026-10-09 |
+| 2026-10-09-invocation-surfaces.md | which surfaces carry `/skill:godspeed` and where they exist on disk: wave renderer + hook + dispatcher only in ufo-fsd-alpha; `sighting/` template authors it in ompskills (`tower-fleet.mjs` zero godspeed logic); manual-prepend sites | 2026-10-09 |

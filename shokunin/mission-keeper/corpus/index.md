@@ -32,3 +32,4 @@ and append one row here. Never rewrite or delete an entry.
 | 2026-10-09-godspeed-injection.md | Godspeed injection: renderer, hook, resume | 2026-10-09 |
 | 2026-10-09-report-dir-two-roots.md | The reportDir two-root collision | 2026-10-09 |
 | 2026-10-09-step5-record-and-l1alias-probe.md | Step-5 record argv and the dead l1Alias supply; bounded re-verification | 2026-10-09 |
+| 2026-10-09-placeholder-line-census.md | Line-cited census: 58 occurrences, 17 tokens, all supplied; l1Alias dead | 2026-10-09 |

@@ -48,3 +48,4 @@ rules. Append-only: one row per entry, in the order entries were added; never re
 | [2026-10-09-r2-gap-host-ufo-json-write.md](2026-10-09-r2-gap-host-ufo-json-write.md) | rename replaces a symlink, does not follow it | 2026-10-09 |
 | [2026-10-09-r2-connector-provenance.md](2026-10-09-r2-connector-provenance.md) | claim→entry→report table; two over-broad phrases | 2026-10-09 |
 | [2026-10-09-verify-dispatch-hardlink.md](2026-10-09-verify-dispatch-hardlink.md) | hardlink prompt leaf not refused; write lands in authority | 2026-10-09 |
+| [2026-10-09-r2-drift-report-vs-source.md](2026-10-09-r2-drift-report-vs-source.md) | report claims re-derived at tip; findings closed, arms unmentioned, residuals understated | 2026-10-09 |

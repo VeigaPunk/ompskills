@@ -34,3 +34,4 @@ Read this index first, then the entries relevant to the assignment.
 | 2026-10-09-verify-suite-green.md | verify tower-fleet suite green (re-run: exit 0, 967 ok, ALL CHECKS PASS) | 2026-10-09 |
 | 2026-10-09-r2-verification-errata.md | round-2 verification errata (corrections to round-1 entries; card bounds amended) | 2026-10-09 |
 | 2026-10-09-verify-errata-claims.md | post-amendment verification of two errata claims (1685 lines; §2 :313-321 no launcher) | 2026-10-09 |
+| 2026-10-09-tft-section-behavior-map.md | tower-fleet section→behavior map (37 sections) & untested launcher behaviors (launch/status/close mechanics) | 2026-10-09 |

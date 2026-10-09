@@ -20,3 +20,4 @@ new entry and never rewrite or delete a row.
 | [2026-10-09-credentials-and-redaction](2026-10-09-credentials-and-redaction.md) | credential-freedom of the routing surfaces and the redaction seam | 2026-10-09 |
 | [2026-10-09-routing-purity-precedent](2026-10-09-routing-purity-precedent.md) | the tower1 `tf-audit-routing` findings F1-F10 and probes V1-V4 | 2026-10-09 |
 | [2026-10-09-main-seat-bucket-binding](2026-10-09-main-seat-bucket-binding.md) | `main` binds `@m_strong` (with `critic`,`planner`); primary route | 2026-10-09 |
+| [2026-10-09-seat-table-and-chain-audit](2026-10-09-seat-table-and-chain-audit.md) | all 14 seats' aliases; resolver + build.rs chain-rule audit — none fail; drifted-mirror caveat | 2026-10-09 |
