@@ -39,3 +39,7 @@ and append one row here. Never rewrite or delete an entry or row.
 | 2026-10-09-live-fleet-shokunin3.md | An in-progress fleet as a specimen | 2026-10-09 |
 | 2026-10-09-boundary-map.md | receipt-keeper's boundary with neighbouring shokunin | 2026-10-09 |
 | 2026-10-09-towerprobe-verify-audit.md | Four-question audit of towerprobe: failure, receipts, integration, pane | 2026-10-09 |
+| 2026-10-09-r2-corrections-ledger.md | Every r1-corpus claim falsified by the r2 wave | 2026-10-09 |
+| 2026-10-09-round-attribution.md | Splitting lanes by round when the registry overwrote r1 rows | 2026-10-09 |
+| 2026-10-09-band-config-clobber.md | A sibling L1 overwrote the substrate band authority; fleet.json never shows it | 2026-10-09 |
+| 2026-10-09-scratch-contamination.md | scratch/: 505 MB of unlisted working space incl. 68 ufo.json copies | 2026-10-09 |

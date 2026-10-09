@@ -34,7 +34,12 @@ uncommitted launcher diff (+per-mission `l1Alias`/`overlays`), and fleet
 | `rounds/<id>-r<N>.md` | L1, by hand | prose; **no code parses contents** |
 
 `.tower/` is git-ignored (`.git/info/exclude:7`): no state-dir artifact is in
-git. Git corroborates branches, merges and worktrees only.
+git. Git corroborates branches, merges and worktrees only. The table is not
+complete: fleet dirs also carry `scratch/` (L1 working space — 505 MB in
+shokunin3, incl. 68 `ufo.json` copies), operator overlays
+(`lanes-haiku.yml`), `policy/`/`ufo-fixture/`/`specs/` dirs, fleet-root
+`wave-*.json`/`payload-*.json`/`*.sh`, and `*.registry.snapshot.json` — see
+corpus `scratch-contamination` and `wave-artifact-zoo`.
 
 ### fleet.json (`verbLaunch`, :905-928)
 
@@ -54,8 +59,10 @@ git. Git corroborates branches, merges and worktrees only.
   360-400 KB); its nested `stopped[].failure` (`RECONCILE_UNATTESTED_STOP`) is
   **wall data about other missions**, never a launcher failure.
 - `ok` = `failures.length === 0` at write time; `launchedAt` is stamped at write
-  time, after the whole mission loop — 0.1 s after session start for a
-  one-mission fleet, up to ~51 s for 16 — use session timestamps as the clock.
+  time, after the whole mission loop. Observed skew vs session stems: one-mission
+  fleets stamp 0.075-0.121 s *before* the first session stem; shokunin2 (8
+  missions) ~51 s after; live shokunin3 (10 missions) ~182 s — use session
+  timestamps as the clock.
 
 ### Failure fields and LAUNCH_PARTIAL
 
@@ -63,31 +70,47 @@ git. Git corroborates branches, merges and worktrees only.
   detail}` and one push to the run-local `failures` (no code); later causes
   overwrite `secondaryFailure`, never re-count.
 - Codes that can land in a record: `RUN_ID_RESERVED` (:789), `WORKTREE_ADD_FAILED`
-  (:815, detail sliced 400), `LAUNCH_FAILED` / `WALL_OUTPUT` (:883; sliced
-  400/200), and in the catch :898 any `TypedError` code (`INVALID_SPEC`,
-  `COMMAND_MISSING`) or `MISSION_FAILED`. Pre-loop throws (`INVALID_SPEC`,
-  `RENDER_UNRESOLVED`, `WALL_OPEN_FAILED`, `WALL_STATUS_FAILED`,
-  `STATE_DIR_UNAVAILABLE`) abort with **no** fleet.json.
+  (:815, detail sliced 400), `LAUNCH_FAILED` / `WALL_OUTPUT` (set at :868/:876;
+  :883 only calls `recordMissionFailure`; sliced 400/200), and in the catch :898
+  any `TypedError` code (`INVALID_SPEC`, `COMMAND_MISSING`) or
+  `MISSION_FAILED`. Pre-loop throws (`INVALID_SPEC`, `RENDER_UNRESOLVED`,
+  `WALL_OPEN_FAILED`, `WALL_STATUS_FAILED`, `STATE_DIR_UNAVAILABLE` — about ten
+  more typed codes exist) abort with **no** fleet.json.
 - Order: per-mission warn → fleet.json write (:907) → stdout FAILED/launched
-  lines (:930-944) → `typed("LAUNCH_PARTIAL")` (:946) → top-level catch writes
-  one `{ok:false,code,message}` line to stderr, exit 2 (:1300-1302). A throw at
-  :906/:907 (unsafe target / fs error) leaves panes up and **no** fleet.json.
-- `COMPLETE_FAILED` (:1227, `close`) is the other post-mutation exit-2 code.
-- On disk: all six fleet.json are `ok:true` with zero launcher failures. The one
-  real failure (`tf-audit-safety`, LAUNCH_FAILED) survives only in tf-launcher
-  transcript copies — an overwrite erased it.
+  lines (:930-944, human mode; `--json` emits one doc at :931) →
+  `typed("LAUNCH_PARTIAL")` (:946) → top-level catch writes one
+  `{ok:false,code,message}` line to stderr, exit 2 (:1300-1302). A throw at
+  :906 (unsafe target) leaves panes up and no new fleet.json — but only on a
+  fresh stateDir; a prior fleet.json survives. A throw *in* the :907 write
+  itself truncates first: the old file is destroyed, leaving at most a
+  partial. Exit 2 has ~9 launcher paths (`WALL_OPEN_FAILED` :716,
+  `WALL_STATUS_FAILED` :722, `STATE_DIR_UNAVAILABLE` :730, `INVALID_SPEC`
+  :906, `UNEXPECTED_ERROR` :907, `COMPLETE_FAILED` :1227, uncaught
+  `COMMAND_MISSING` :510 via :1195, wall-side status), not just
+  LAUNCH_PARTIAL and COMPLETE_FAILED — and `COMPLETE_FAILED` does not prove
+  the close failed to land: the wall writes the manifest (:3387) before tmux
+  settle (:3388).
+- On disk: all six fleet.json are `ok:true` with zero launcher failures. The
+  one real failure (`tf-audit-safety`, `LAUNCH_FAILED: L1_CEILING_EXCEEDED`)
+  was erased from `tower1/fleet.json` by an operator-session rewrite, but the
+  detail string survives in dozens of session transcripts and report files.
 
 ### Readers — what status and close actually consult
 
-- `readFleetState` :583-593 → `null` on missing/unreadable/non-object (warn,
-  never throw). Callers: `verbLaunch` :725 (`previousById` adoption) and
+- `readFleetState` :583-593 → `null` on missing/unreadable/scalar (warn,
+  never throw); the `typeof` check at :588 passes **arrays**, which are
+  returned as-is. Callers: `verbLaunch` :725 (`previousById` adoption) and
   `verbStatus` :1008. `verbClose` never reads or writes fleet.json; a close is
   recorded only in the wall manifest (`completed`, `finalNote`), which evicts
-  past 50 completed rows.
+  past 50 completed rows (`MAX_COMPLETED_MISSIONS=50`, base.mjs:65) and prunes
+  stopped rows past `MAX_STOPPED_MISSIONS=100` (ufo-sighting.mjs:171-180).
 - `roundReceipts` :951-958: names in `<stateDir>/rounds/` that
-  `startsWith(id+"-r")` and end `.md`, sorted by `/r(\d+)\.md$/` (non-numeric →
-  0). Filenames only — status never reads a receipt. Prefix hazard: id
-  `tf-safety` would match `tf-safety-r2-r1.md`.
+  `startsWith(id+"-r")` and end `.md`, sorted by
+  `Number(a.match(/r(\d+)\.md$/)?.[1] ?? 0)` (non-numeric → 0, ties in readdir
+  order). Filenames only — status never reads a receipt; a *directory* named
+  `m-r3.md` is returned as a receipt. Prefix hazard: id `tf-safety` would
+  match `tf-safety-r2-r1.md` — live: `status` on tower1 lists
+  `tf-safety-r2`'s receipt under tf-audit's rounds block.
 - `verbStatus` `ok:true` is a literal (:1106); `source` ∈ `wall | wall-retired |
   state | spec`; a not-on-wall row gets `paneId: null` even when fleet.json
   recorded one.
@@ -95,50 +118,73 @@ git. Git corroborates branches, merges and worktrees only.
 ### Ceilings are prompt text, not enforcement
 
 `roundCeiling` is parsed (:388-389), copied (:915) and rendered (:436) — no code
-counts rounds. `maxTime` is passed as `omp --max-time` (:474); sessions in
-shokunin, tower1 and towerprobe outlived it, every observed `session_exit` is
-`sighup`. A receipt's "stop at ceiling" is the L1's claim, not a gate.
+counts rounds. `maxTime` is passed as `omp --max-time` (:474), which does build
+a deadline that stops *active* work — but pane processes in shokunin, tower1
+and towerprobe outlived it as idle processes (last turn well under the cap).
+Every observed L1 `session_exit` is `sighup` (33/33); subagent sessions exit
+with reason `dispose`. A receipt's "stop at ceiling" is the L1's claim, not a
+gate.
 
 ### Round receipts (59 on disk, 5 fleets)
 
 - No canonical template; bind on slots, not headings: axes, wave plan, lane
   outcomes (N/M), accepted moves, rejected moves, verification dispatch,
   continue/stop. Full slot set in 21/31 shokunin receipts; 5 H1 families.
-- Decisions: 26 continue (all r1) / 33 stop — saturation 10, round ceiling 15,
-  both 8, blocked 0, lane ceiling 0. No r2 under ceiling 1; no dangling
-  continue.
-- Mission id suffix `-r2` (`tf-safety-r2`) is a relaunch generation, not a round.
+- Decisions: 26 continue (all r1) / 33 stop — saturation 10, round ceiling 14,
+  both 9, blocked 0, lane ceiling 0 (recount, receipt's own named cause). No
+  r2 under ceiling 1; no dangling continue.
+- Mission id suffix `-r2` (`tf-safety-r2`) is a relaunch generation, not a
+  round — but in wave ids and lane suffixes `-rN` **is** the round.
 
 ### Reconstruction method (honest)
 
 1. **Pin the record.** sha256 fleet.json/spec.json; note mtimes and
-   `launchedAt`; flag keys no writer emits (`tower1` `reconciledAt` —
-   out-of-band edit at 03:06:47Z).
+   `launchedAt`; flag keys no writer emits (`tower1` `reconciledAt` — written
+   by an operator-session bash script at 03:06:47Z that also swapped
+   `tf-audit-safety` → `tf-safety-r2` in `tower1/spec.json` and
+   `tower1/fleet.json`; the row is live evidence, not launcher output).
 2. **Cross-index** spec ids × fleet.json ids × prompts × `sessions/<id>` ×
    `rounds/<id>-r*` × `reports/<id>*` × `waves/<id>-*`. Every mismatch is a
    finding, not noise.
-3. **Sessions are ground truth for what ran:** first user message = rendered
-   prompt; dispatch = `toolCall` named `eval` containing `tool.task` (or a
-   `task` toolCall); lane transcripts sit in the same-stem dir with
-   `parentSession`. Missing session = launch never reached omp.
+3. **Sessions are ground truth for what ran:** the first user message wraps
+   the rendered prompt in `<file name="...">`; dispatch = `toolCall` named
+   `eval` containing `tool.task` (or a `task` toolCall); lane transcripts sit
+   in the same-stem dir with `parentSession`. An **empty** `sessions/<id>/`
+   means launch reached the wall but failed before omp wrote (dir mkdir runs
+   before the pane spawn); a *missing* dir means it never got that far.
 4. **Waves:** `<wave>.spec.json` + `.payload.json` (`ufo-swarm-wave-dispatch-v1`)
-   suffice; `.record.json`/registry adds ids. Key on the spec's `wave` field,
-   not the filename. All `.err` seen are 0 bytes — exit codes are not persisted.
-5. **Registries:** parse `.members`; a reused reportDir across rounds
-   overwrites or accumulates members — count per-round subsets. All-null
-   `agentId` = `record` never ran.
+   suffice; `swarm-registry.json` is written by the validator's `run` (not by
+   shell redirect) and `record` fills `agentId`. Suffixes seen: `.spec.json`,
+   `.payload.json`, `.dispatch.json` (5 waves carry dispatch with no payload),
+   `.record.json`, `.err` (all zero bytes — validator exit codes are not
+   persisted; they survive only echoed in L1 transcripts). Key on the spec's
+   `wave` field, not the filename (filenames with `ww-r` ≠ wave `w-r`).
+5. **Registries:** `.members` is an object keyed by lane name; a reused
+   reportDir across rounds **accumulates** members and a reused lane name
+   overwrites its row (tf-audit-launcher: 45 keys for 48 lanes — 3 r1 names
+   overwritten by r2 rows; wave/milestone fields then carry the last writer).
+   All-null `agentId` = `record` never ran; recorded agentIds equal the member
+   name for ~90% of entries, so a recorded id is not a runtime-handle proof.
 6. **Receipt claims:** verify counts against disk at the receipt's pinned
    commit (`git show <rev>:<path>`); claims resting on `/tmp` are UNCHECKABLE.
-   Observed drift: tf-audit-wall-r1 names 9 FAIL lanes vs 7 on disk; corpus
-   counts lag their commits by one.
+   Observed drift: tf-audit-wall-r1 headlines "25 PASS / 7 FAIL" matching 7
+   `verdict: FAIL` reports on disk, while its FAIL-defect row names 9 (two of
+   them, L1BoundCritic29 and WallVerbsReviewer21, are `verdict: PASS` on
+   disk); corpus entry counts lag their branch commits by one (wave-smith,
+   skill-scribe, test-smith — entries appended after the receipt).
 7. **Integration:** three-way, never boolean — `git merge-base --is-ancestor`
    + `git rev-list --count main..<branch>` + `git log main --merges
    --grep='Merge <branch>'` (no `--first-parent`). Ahead-of-merge tips
    (tf-launcher `7f98487`, tf-audit-wall `29849d3`) hold accepted work main
    lacks. `omp worktree list` does not see `.tower/worktrees/*`; use
    `git worktree list`.
-8. **Panes:** join fleet.json to the wall manifest by `runId`; `%N` pane ids are
-   reused across tmux servers and fleets — never identity without `panePid`.
+8. **Panes:** `runId` is not a mission field — it lives at
+   `missions[i].launchResult.missions[j]` (the embedded wall launch snapshot,
+   which also carries terminal state like `exitCode`); join it to the wall
+   manifest for `panePid`. `%N` pane ids are reused across fleets (26 paneIds
+   appear in >1 fleet.json — 8 at mission level incl. %5-%11/%21, 18 via
+   wall-snapshot embeds) — never identity without `panePid`, which fleet.json
+   never records.
 9. **Report** with three verdicts — CONFIRM / REFUTE / UNCHECKABLE — and the
    revision each was taken at.
 
