@@ -71,6 +71,7 @@ import { spawnSync } from "node:child_process";
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -193,37 +194,47 @@ function scopeOverlaps(a, b) {
 }
 
 /** Resolve a path that may not exist yet by realpath-ing its deepest existing
- * ancestor: a symlinked parent must not smuggle the result somewhere else. */
+ * ancestor: a symlinked parent must not smuggle the result somewhere else.
+ * A dangling link on the way is reported (`dangling: true`) instead of being
+ * silently resolved lexically — the kernel would fail the write later, after
+ * the wall has been touched. */
 function realpathDeepest(target) {
   let current = path.resolve(target);
   const tail = [];
   while (!existsSync(current)) {
+    if (lstatSync(current, { throwIfNoEntry: false })?.isSymbolicLink()) {
+      return { resolved: path.resolve(target), dangling: true };
+    }
     const parent = path.dirname(current);
     if (parent === current) break;
     tail.unshift(path.basename(current));
     current = parent;
   }
   try {
-    return path.resolve(realpathSync(current), ...tail);
+    return { resolved: path.resolve(realpathSync(current), ...tail), dangling: false };
   } catch {
-    return path.resolve(target);
+    return { resolved: path.resolve(target), dangling: false };
   }
 }
 
 /** A write root must never reach into the substrate or the repo's own git
  * plumbing — the two places the safety contract forbids, both reachable
- * through a spec field or a symlinked parent. The check runs on the realpath,
- * so `ln -s <ufoRoot> …` cannot launder the write. */
-function assertSafeWriteRoot(value, field, repo, ufoRoot) {
-  const resolved = realpathDeepest(value);
-  const inside = (child, parent) => child === parent || child.startsWith(parent + path.sep);
-  if (inside(resolved, ufoRoot)) {
-    typed("INVALID_SPEC", `${field} ${value} resolves inside ufoRoot ${ufoRoot} — the substrate is never written`);
+ * through a spec field, a symlinked parent, or a symlinked repo/ufoRoot. BOTH
+ * sides of every comparison are realpath-resolved, so neither a symlinked
+ * child nor a symlinked parent can launder the write. */
+function assertSafeWriteRoot(value, field, roots) {
+  const { resolved, dangling } = realpathDeepest(value);
+  if (dangling) {
+    typed("INVALID_SPEC", `${field} ${value} resolves through a dangling symlink — the write would fail after the wall was touched`);
   }
-  if (resolved === repo) {
+  const inside = (child, parent) => child === parent || child.startsWith(parent + path.sep);
+  if (inside(resolved, roots.ufoReal) || inside(resolved, roots.ufoLexical)) {
+    typed("INVALID_SPEC", `${field} ${value} resolves inside ufoRoot ${roots.ufoLexical} (${roots.ufoReal}) — the substrate is never written`);
+  }
+  if (resolved === roots.repoReal || resolved === roots.repoLexical) {
     typed("INVALID_SPEC", `${field} ${value} resolves to the repo root itself — declare a subdirectory`);
   }
-  if (inside(resolved, path.join(repo, ".git"))) {
+  if (inside(resolved, path.join(roots.repoReal, ".git")) || inside(resolved, path.join(roots.repoLexical, ".git"))) {
     typed("INVALID_SPEC", `${field} ${value} resolves inside the repo's .git directory`);
   }
 }
@@ -313,8 +324,14 @@ function loadSpec(specPath, authority) {
 
   const stateDir = resolveRepoPath(repo, raw.stateDir ?? `.tower/fleets/${raw.fleet}`, "stateDir");
   const worktreeRoot = resolveRepoPath(repo, raw.worktreeRoot ?? `.tower/worktrees/${raw.fleet}`, "worktreeRoot");
-  assertSafeWriteRoot(stateDir, "stateDir", repo, ufoRoot);
-  assertSafeWriteRoot(worktreeRoot, "worktreeRoot", repo, ufoRoot);
+  const roots = {
+    repoLexical: repo,
+    ufoLexical: ufoRoot,
+    repoReal: realpathDeepest(repo).resolved,
+    ufoReal: realpathDeepest(ufoRoot).resolved,
+  };
+  assertSafeWriteRoot(stateDir, "stateDir", roots);
+  assertSafeWriteRoot(worktreeRoot, "worktreeRoot", roots);
 
   return {
     fleet: raw.fleet,
@@ -481,6 +498,12 @@ function wallRowPhase(row) {
   return row?.phase ?? (wallRowLive(row) ? "working" : "unknown");
 }
 
+/** What the wall's record says the mission *is*: a retired row's own array
+ * (`completed`/`stopped`), else its live phase. Never used for liveness. */
+function wallRowDisposition(row) {
+  return row?.disposition ?? wallRowPhase(row);
+}
+
 /** The wall's live view keyed by run id: the ONLY place liveness is read from. */
 function liveViewById(registry) {
   return new Map(registry.active.map((row) => [wallRowId(row), row]));
@@ -527,6 +550,19 @@ function buildPlan(spec, authority) {
 
 function quoteArg(token) {
   return /^[\w@./:=+-]+$/.test(token) ? token : `'${token.replace(/'/g, `'\\''`)}'`;
+}
+
+/** Record one mission's failure exactly once. A mission can hit two causes
+ * (e.g. a reserved run id and a failed worktree add); the FIRST is the one
+ * that blocked it, the second is kept as `secondaryFailure`, and the mission
+ * is counted once so the LAUNCH_PARTIAL summary cannot read "2 of 1". */
+function recordMissionFailure(record, failures, code, detail) {
+  if (record.failure === undefined) {
+    record.failure = { code, detail };
+    failures.push({ id: record.id, detail });
+    return;
+  }
+  record.secondaryFailure = { code, detail };
 }
 
 function printPlanHuman(spec, authority, plan) {
@@ -617,7 +653,11 @@ function verbLaunch(spec, authority, options) {
   const { byId: registryById } = registry;
   const liveById = liveViewById(registry);
   const previousById = new Map((readFleetState(spec)?.missions ?? []).map((mission) => [mission.id, mission]));
-  mkdirSync(spec.stateDir, { recursive: true });
+  try {
+    mkdirSync(spec.stateDir, { recursive: true });
+  } catch (error) {
+    typed("STATE_DIR_UNAVAILABLE", `cannot create stateDir ${spec.stateDir}: ${error.message}`);
+  }
 
   const records = [];
   const failures = [];
@@ -640,132 +680,143 @@ function verbLaunch(spec, authority, options) {
       launchResult: null,
     };
 
-    // 1. Adopt the wall row this run id already owns, FIRST: the wall reserves
-    //    a run id globally, and a live pane must be recorded even when the
-    //    local worktree cannot be recreated (a failed `omp worktree add` used
-    //    to drop the pane reference on the floor).
-    const existing = registryById.get(row.id);
-    if (existing !== undefined) {
-      const live = wallRowLive(liveById.get(row.id));
-      record.paneId = existing.paneId ?? null;
-      record.panePhase = wallRowPhase(existing);
-      record.paneReused = true;
-      record.retired = !live;
-      // Keep the prior run's raw pane receipt: adoption re-reads the wall, and
-      // overwriting the record with null would lose what launch actually saw.
-      const prior = previousById.get(row.id);
-      if (prior?.launchResult !== undefined && prior.launchResult !== null) {
-        record.launchResult = prior.launchResult;
-        record.launchResultFrom = "prior-state";
-      }
-      if (live) {
-        warn(`mission ${row.id} is already on the wall (${record.panePhase}) — reusing pane ${record.paneId ?? "?"}, not relaunching`);
-        if ((existing.fleet ?? null) !== spec.fleet) {
-          warn(`mission ${row.id} is registered under fleet ${existing.fleet ?? "(none)"}, not ${spec.fleet} — reusing the wall row as-is`);
+    try {
+      // 1. Adopt the wall row this run id already owns, FIRST: the wall reserves
+      //    a run id globally, and a live pane must be recorded even when the
+      //    local worktree cannot be recreated (a failed `omp worktree add` used
+      //    to drop the pane reference on the floor).
+      const existing = registryById.get(row.id);
+      if (existing !== undefined) {
+        const live = wallRowLive(liveById.get(row.id));
+        record.paneId = existing.paneId ?? null;
+        record.panePhase = wallRowDisposition(existing);
+        record.paneReused = true;
+        record.retired = !live;
+        // Keep the prior run's raw pane receipt: adoption re-reads the wall, and
+        // overwriting the record with null would lose what launch actually saw.
+        const prior = previousById.get(row.id);
+        if (prior?.launchResult !== undefined && prior.launchResult !== null) {
+          record.launchResult = prior.launchResult;
+          record.launchResultFrom = "prior-state";
         }
-      } else {
-        // The run id is still reserved by a retired row, so no fresh pane can be
-        // launched under it. Report that instead of letting the wall answer a
-        // bare RUN_ID_CONFLICT, and keep the retired row's pane reference.
-        const detail = `run id ${row.id} is still registered by a ${record.panePhase} wall row — a fresh pane cannot launch under a reserved run id; retire the row (\`bash <ufoRoot>/scripts/ufo-sighting remove --mission ${existing.missionId ?? row.id}\`) or use a new mission id`;
-        record.failure = { code: "RUN_ID_RESERVED", detail };
-        failures.push({ id: row.id, detail });
-        warn(`mission ${row.id} is ${record.panePhase} on the wall and its run id is still reserved — recording RUN_ID_RESERVED, not relaunching`);
+        if (live) {
+          warn(`mission ${row.id} is already on the wall (${record.panePhase}) — reusing pane ${record.paneId ?? "?"}, not relaunching`);
+          if ((existing.fleet ?? null) !== spec.fleet) {
+            warn(`mission ${row.id} is registered under fleet ${existing.fleet ?? "(none)"}, not ${spec.fleet} — reusing the wall row as-is`);
+          }
+        } else {
+          // The run id is still reserved by a retired row, so no fresh pane can be
+          // launched under it. Report that instead of letting the wall answer a
+          // bare RUN_ID_CONFLICT, and keep the retired row's pane reference.
+          const missionRef = existing.missionId ?? row.id;
+          const remedy = record.panePhase === "suspended"
+            ? `the wall can revive this same run id (\`bash <ufoRoot>/scripts/ufo-sighting resume --mission ${missionRef} -- <omp argv>\`), or retire the row (\`bash <ufoRoot>/scripts/ufo-sighting remove --mission ${missionRef}\`) or use a new mission id`
+            : `retire the row (\`bash <ufoRoot>/scripts/ufo-sighting remove --mission ${missionRef}\`) or use a new mission id`;
+          const detail = `run id ${row.id} is still registered by a ${record.panePhase} wall row — a fresh pane cannot launch under a reserved run id; ${remedy}`;
+          recordMissionFailure(record, failures, "RUN_ID_RESERVED", detail);
+          warn(`mission ${row.id} is ${record.panePhase} on the wall and its run id is still reserved — recording RUN_ID_RESERVED, not relaunching`);
+        }
       }
-    }
 
-    // 2. worktree — reuse an existing one with a warning, never clobber it.
-    //    A failed add is this mission's failure, not a mid-fleet abort: the
-    //    panes already up must stay recorded in fleet.json.
-    if (existsSync(row.worktree)) {
-      warn(`worktree ${row.worktree} already exists — reusing it as-is`);
-      record.worktreeReused = true;
-    } else {
-      const adoptedWithoutTree = record.paneReused;
-      if (adoptedWithoutTree) {
-        warn(`mission ${row.id} reuses a wall row but its worktree ${row.worktree} is missing`);
+      // 2. worktree — reuse an existing one with a warning, never clobber it.
+      //    A failed add is this mission's failure, not a mid-fleet abort: the
+      //    panes already up must stay recorded in fleet.json.
+      if (existsSync(row.worktree)) {
+        warn(`worktree ${row.worktree} already exists — reusing it as-is`);
+        record.worktreeReused = true;
+      } else {
+        const adoptedWithoutTree = record.paneReused;
+        if (adoptedWithoutTree) {
+          warn(`mission ${row.id} reuses a wall row but its worktree ${row.worktree} is missing`);
+        }
+        const added = run([
+          "omp", "worktree", "add",
+          "-C", spec.repo,
+          "-b", row.branch,
+          row.worktree,
+          spec.base,
+        ]);
+        if (added.status !== 0) {
+          // The tree is still gone, so only now is the fact worth recording.
+          if (adoptedWithoutTree) record.worktreeMissing = true;
+          recordMissionFailure(record, failures, "WORKTREE_ADD_FAILED", `omp worktree add exited ${added.status}: ${(added.stderr || added.stdout).slice(0, 400)}`);
+          records.push(record);
+          continue;
+        }
+        if (adoptedWithoutTree) record.worktreeRecreated = true;
       }
-      const added = run([
-        "omp", "worktree", "add",
-        "-C", spec.repo,
-        "-b", row.branch,
-        row.worktree,
-        spec.base,
-      ]);
-      if (added.status !== 0) {
-        // The tree is still gone, so only now is the fact worth recording.
-        if (adoptedWithoutTree) record.worktreeMissing = true;
-        const detail = `omp worktree add exited ${added.status}: ${(added.stderr || added.stdout).slice(0, 400)}`;
-        record.failure = { code: "WORKTREE_ADD_FAILED", detail };
-        failures.push({ id: row.id, detail });
+
+      // 3. skills — copy each named skill into the worktree; missing is a warning.
+      for (const skill of mission.skills) {
+        const source = copySkill(skill, spec, row.worktree);
+        if (source === null) warn(`skill ${skill} not found for mission ${row.id} (searched repo, ufoRoot, ~/.agents/skills) — continuing`);
+        record.skills.push({ name: skill, source });
+      }
+
+      // 4. prompt into the state dir (+ per-mission session dir). The rendered
+      //    prompt is the source of truth, so a relaunch regenerates it from the
+      //    spec; only byte-identical content is left untouched (no churn, and
+      //    `promptReused` records which happened — a hand-edited prompt is
+      //    overwritten).
+      const sessionsDir = path.join(spec.stateDir, "sessions", row.id);
+      mkdirSync(sessionsDir, { recursive: true });
+      const existingPrompt = existsSync(row.promptPath) ? readFileSync(row.promptPath, "utf8") : null;
+      if (existingPrompt === row.prompt) {
+        record.promptReused = true;
+      } else {
+        writeFileSync(row.promptPath, row.prompt);
+      }
+
+      // 5. launch the pane only when no wall row was adopted: a second wall
+      //    launch of a reserved run id is RUN_ID_CONFLICT, which is the failure
+      //    this whole adoption path exists to avoid.
+      if (record.paneReused) {
         records.push(record);
         continue;
       }
-      if (adoptedWithoutTree) record.worktreeRecreated = true;
-    }
-
-    // 3. skills — copy each named skill into the worktree; missing is a warning.
-    for (const skill of mission.skills) {
-      const source = copySkill(skill, spec, row.worktree);
-      if (source === null) warn(`skill ${skill} not found for mission ${row.id} (searched repo, ufoRoot, ~/.agents/skills) — continuing`);
-      record.skills.push({ name: skill, source });
-    }
-
-    // 4. prompt into the state dir (+ per-mission session dir). The rendered
-    //    prompt is the source of truth, so a relaunch regenerates it from the
-    //    spec; only byte-identical content is left untouched (no churn, and
-    //    `promptReused` records which happened — a hand-edited prompt is
-    //    overwritten).
-    const sessionsDir = path.join(spec.stateDir, "sessions", row.id);
-    mkdirSync(sessionsDir, { recursive: true });
-    const existingPrompt = existsSync(row.promptPath) ? readFileSync(row.promptPath, "utf8") : null;
-    if (existingPrompt === row.prompt) {
-      record.promptReused = true;
-    } else {
-      writeFileSync(row.promptPath, row.prompt);
-    }
-
-    // 5. launch the pane only when no wall row was adopted: a second wall
-    //    launch of a reserved run id is RUN_ID_CONFLICT, which is the failure
-    //    this whole adoption path exists to avoid.
-    if (record.paneReused) {
-      records.push(record);
-      continue;
-    }
-    const launched = wallCli(spec, ...row.launchArgv.slice(2));
-    let failure = null;
-    let result = null;
-    if (launched.status !== 0) {
-      let detail = (launched.stderr || launched.stdout).slice(0, 400);
-      try {
-        const parsed = JSON.parse(launched.stdout || launched.stderr);
-        if (parsed?.code) detail = `${parsed.code}: ${parsed.message ?? detail}`;
-      } catch { /* verbatim text is the fallback detail */ }
-      failure = { code: "LAUNCH_FAILED", detail };
-    } else {
-      // A zero exit with unparseable stdout is a failure too: the pane may be
-      // up but its id is unknown, so recording it as a failure keeps fleet.json
-      // written instead of aborting mid-fleet through parseJsonOutput.
-      try {
-        result = JSON.parse(launched.stdout);
-      } catch {
-        failure = { code: "WALL_OUTPUT", detail: `wall launch for ${row.id} did not print JSON: ${launched.stdout.slice(0, 200)}` };
+      const launched = wallCli(spec, ...row.launchArgv.slice(2));
+      let failure = null;
+      let result = null;
+      if (launched.status !== 0) {
+        let detail = (launched.stderr || launched.stdout).slice(0, 400);
+        try {
+          const parsed = JSON.parse(launched.stdout || launched.stderr);
+          if (parsed?.code) detail = `${parsed.code}: ${parsed.message ?? detail}`;
+        } catch { /* verbatim text is the fallback detail */ }
+        failure = { code: "LAUNCH_FAILED", detail };
+      } else {
+        // A zero exit with unparseable stdout is a failure too: the pane may be
+        // up but its id is unknown, so recording it as a failure keeps fleet.json
+        // written instead of aborting mid-fleet through parseJsonOutput.
+        try {
+          result = JSON.parse(launched.stdout);
+        } catch {
+          failure = { code: "WALL_OUTPUT", detail: `wall launch for ${row.id} did not print JSON: ${launched.stdout.slice(0, 200)}` };
+        }
       }
-    }
-    if (failure !== null) {
-      // Partial-failure policy: record the failure, keep the panes already
-      // launched, and continue. The fleet state file is written either way, so
-      // an operator can see exactly which missions came up.
-      record.failure = failure;
-      failures.push({ id: row.id, detail: failure.detail });
+      if (failure !== null) {
+        // Partial-failure policy: record the failure, keep the panes already
+        // launched, and continue. The fleet state file is written either way, so
+        // an operator can see exactly which missions came up.
+        recordMissionFailure(record, failures, failure.code, failure.detail);
+        records.push(record);
+        continue;
+      }
+      record.launchResult = result;
+      const rowView = (result.missions ?? []).find((m) => m.runId === row.id || m.missionId === row.id);
+      record.paneId = rowView?.paneId ?? null;
+      if (record.paneId === null) warn(`wall launch for ${row.id} reported no pane id`);
       records.push(record);
-      continue;
+    } catch (error) {
+      // A throw inside one mission (a missing binary, an fs error) must not lose
+      // the missions already up either: it is that mission's failure, recorded,
+      // and the run still writes fleet.json.
+      const code = error instanceof TypedError ? error.code : "MISSION_FAILED";
+      const detail = error instanceof TypedError ? error.message : String(error?.message ?? error);
+      recordMissionFailure(record, failures, code, detail);
+      warn(`mission ${row.id} failed (${code}): ${detail}`);
+      records.push(record);
     }
-    record.launchResult = result;
-    const rowView = (result.missions ?? []).find((m) => m.runId === row.id || m.missionId === row.id);
-    record.paneId = rowView?.paneId ?? null;
-    if (record.paneId === null) warn(`wall launch for ${row.id} reported no pane id`);
-    records.push(record);
   }
 
   // 6. fleet state, written only under <stateDir>.
@@ -797,7 +848,14 @@ function verbLaunch(spec, authority, options) {
     emitJson({ ok: failures.length === 0, verb: "launch", fleet: spec.fleet, fleetStatePath: fleetPath, failures, missions: records.map(({ launchResult, ...rest }) => ({ ...rest, launchResultRecorded: Boolean(launchResult) })) });
   } else {
     for (const record of records) {
-      process.stdout.write(`launched ${record.id} · pane ${record.paneId ?? "?"} · worktree ${record.worktree}\n`);
+      if (record.failure !== undefined) {
+        process.stdout.write(`FAILED ${record.id} · ${record.failure.code} · worktree ${record.worktree}\n`);
+        if (record.secondaryFailure !== undefined) {
+          process.stdout.write(`       ${record.id} also hit ${record.secondaryFailure.code}\n`);
+        }
+      } else {
+        process.stdout.write(`launched ${record.id} · pane ${record.paneId ?? "?"}${record.paneReused ? " (reused)" : ""} · worktree ${record.worktree}\n`);
+      }
     }
     process.stdout.write(`fleet state: ${fleetPath}\n`);
   }
@@ -826,15 +884,29 @@ function wallRegistry(spec) {
   const wall = readWall(spec);
   const active = Array.isArray(wall.missions) ? wall.missions : [];
   const retired = [
-    ...(Array.isArray(wall.completed) ? wall.completed : []),
-    ...(Array.isArray(wall.stopped) ? wall.stopped : []),
+    // Tagged with the array the row came from, using the wall's OWN vocabulary
+    // (`statusPhase`: completed row -> "completed", stopped row -> "suspended",
+    // which is exactly what the wall's `resume` verb gates on). A retired row's
+    // own `phase` is a dispatcher observation and can be stale, so the array is
+    // the authoritative input everywhere liveness or status is reported.
+    ...(Array.isArray(wall.completed) ? wall.completed : []).map((row) => ({ ...row, disposition: "completed" })),
+    ...(Array.isArray(wall.stopped) ? wall.stopped : []).map((row) => ({ ...row, disposition: "suspended" })),
   ];
+  // The retired arrays are the wall's display slice, not the whole manifest:
+  // when they are truncated, a run id can be reserved invisibly, so the
+  // fallback (the wall refusing the launch itself) is the only honest answer.
+  const truncated = (count, rows) => Number.isSafeInteger(count) && Array.isArray(rows) && rows.length < count;
+  if (truncated(wall.completedMissionCount, wall.completed) || truncated(wall.stoppedMissionCount, wall.stopped)) {
+    warn(`wall registry view is truncated (completed ${Array.isArray(wall.completed) ? wall.completed.length : 0}/${wall.completedMissionCount ?? "?"}, stopped ${Array.isArray(wall.stopped) ? wall.stopped.length : 0}/${wall.stoppedMissionCount ?? "?"}) — a hidden retired row still reserves its run id`);
+  }
   return {
     wall,
     active,
     retired,
     fleetRows: active.filter((row) => (row.fleet ?? null) === spec.fleet),
-    byId: new Map([...active, ...retired].map((row) => [wallRowId(row), row])),
+    // Live rows LAST: if a run id ever appears in both views, the live row's
+    // paneId/phase must win over a retired projection of the same mission.
+    byId: new Map([...retired, ...active].map((row) => [wallRowId(row), row])),
   };
 }
 
@@ -908,7 +980,7 @@ function verbStatus(spec, authority, options) {
         missionId: retiredRow.missionId ?? null,
         title: retiredRow.title ?? mission.title,
         source: "wall-retired",
-        status: wallRowPhase(retiredRow),
+        status: wallRowDisposition(retiredRow),
         live: false,
         retired: true,
         retiredAt: retiredRow.completedAt ?? retiredRow.stoppedAt ?? null,
@@ -969,7 +1041,7 @@ function verbStatus(spec, authority, options) {
       process.stdout.write(`reconcile: in fleet state but not on the wall: ${inStateNotOnWall.join(", ")}\n`);
     }
     if (foreignRows.length > 0) {
-      process.stdout.write(`reconcile: run id(s) this fleet owns registered under another fleet: ${foreignRows.map((row) => `${wallRowId(row)} (${row.fleet ?? "none"})`).join(", ")}\n`);
+      process.stdout.write(`reconcile: wall row(s) registered under another fleet for run id(s) this fleet tracks: ${foreignRows.map((row) => `${wallRowId(row)} (${row.fleet ?? "none"})`).join(", ")}\n`);
     }
   }
   return EXIT_OK;
@@ -1007,6 +1079,9 @@ function verbClose(spec, authority, options) {
       continue;
     }
     const paneLive = wallRowLive(liveById.get(mission.id));
+    if ((row.fleet ?? null) !== null && (row.fleet ?? null) !== spec.fleet) {
+      warn(`mission ${mission.id} is registered under fleet ${row.fleet} — completing it from fleet ${spec.fleet} by run id`);
+    }
     const completed = wallCli(spec, "complete", "--mission", mission.id, "--note", "tower-fleet close");
     const detail = (completed.stdout || completed.stderr).slice(0, 200);
     if (completed.status !== 0) {
