@@ -11,10 +11,13 @@ But the **live band authority is not stable while concurrent work runs**: the
 substrate file `ufo-fsd-alpha/config/ufo.json` was written three times in
 seventeen minutes (two `apply --apply` merges and one rollback to the committed
 `32-100` band), and the rollback broke four of the sixteen points for ~8.7
-minutes mid-mission. "The live config carries the merged band" is therefore
-**false as a steady-state claim**, even though it is true right now. Every
-live-authority claim in this report is pinned to a sha256 and a wall-clock
-window for exactly that reason.
+minutes mid-mission. The rollback is attributed and corroborated: a sibling
+mission's scratch root symlinked `config/ufo.json` to the live file, so its
+"write the committed config into the scratch copy" landed in the substrate
+(§2a). "The live config carries the merged band" is therefore **false as a
+steady-state claim**, even though it is true right now. Every live-authority
+claim in this report is pinned to a sha256 and a wall-clock window for exactly
+that reason.
 
 ---
 
@@ -77,7 +80,7 @@ read-only against both checkouts and wrote exactly one report file under
 | -------- | ----------- | -------- |
 | 01:14:17 | `apply --apply` ran; backup `config/ufo.json.2026-10-09T01-14-17-257Z.bak` created holding the pre-merge `32-100 / minLanes 64` | backup file + its band values |
 | 01:19–01:21 | **live band = 16-32, cap 100, minLanes 16.** L1 parses the file, and the planner run at 01:20:32Z reports `policy {source: config, minLanes 16, waveMinLanes 16, waveMaxLanes 32, maxLanes 100}`; the L1's own 16-lane wave is admitted at 01:20:49Z | `/tmp/bandplan1.json`, `/tmp/bandrun1.json` (mtime 01:20:32Z / 01:20:49Z) |
-| **01:22:15** | **rollback**: file rewritten to exactly the committed bytes and `git status` shows it *unmodified* → live band reverts to `32-100 / minLanes 64`, sha256 `7efc813b23ca65282e9839dc930aeba9fd7349264b8bc67becc917f40a61b0d1` | `stat` mtime; `git diff` empty; lanes 3/4/5/7/8/12 each re-read and hash it |
+| **01:22:15** | **rollback** (cause now attributed): file rewritten to exactly the committed bytes and `git status` shows it *unmodified* → live band reverts to `32-100 / minLanes 64`, sha256 `7efc813b23ca65282e9839dc930aeba9fd7349264b8bc67becc917f40a61b0d1` | `stat` mtime; `git diff` empty; lanes 3/4/5/7/8/12 each re-read and hash it; mechanism in the sibling `tf-band` transcript, §2a |
 | 01:22–01:30 | four points measured red against this authority (findings 3, 4, 7, 12 below) | lane reports |
 | **01:30:57** | a **second `apply --apply`**: new backup `…2026-10-09T01-30-57-403Z.bak` (holding `32-100`) and the delta merged again → live `16-32 / cap 100 / minLanes 16`, sha256 `0e416f0abc559e9a91bc0c35…`, byte-diff vs HEAD = exactly the delta's six values | backup file, `diff -u HEAD:config/ufo.json config/ufo.json` |
 | 01:35:20 | L1 re-probe of all five edges against the restored authority: 15 refused `too_few_lanes`, 16 admitted, 32 admitted, 33 `wave_too_wide`, 101 `too_many_lanes`; sha256 unchanged across the probe | this session |
@@ -88,17 +91,34 @@ Live-vs-HEAD delta merge, verified equal to `host/ufo-sighting-dispatch.json`:
 minLanes 16, waveMinLanes 16, waveMaxLanes 32}` — HEAD carries
 `minLanes 64, waveMinLanes 32, waveMaxLanes 100`.
 
-**Attribution: UNRESOLVED.** The rollback is not attributable from any evidence I
-could reach: no lane ran a mutating command (each lane records config+validator
-hashes identical before/after, scratch confined to `/tmp`); the L1's own
-`apply.mjs` dry run is proven non-mutating (sha256 and mtime identical across
-the run, "Nothing was written"); no transcript in this fleet or in the sibling
-fleet `tower1` records executing the rollback or the 01:30:57Z apply. What *is*
-established: the substrate is shared — sibling fleet `tower1` launched at
-01:19:22Z (16 missions, same repo, same `ufoRoot`) and its session transcripts
-reason that "`apply.mjs --apply` would fix the drift for all missions". I do not
-claim authorship; I claim concurrency plus three writes with three distinct
-contents in seventeen minutes.
+### 2a. Cause of the 01:22:15Z rollback — attributed and corroborated
+
+The operator attributed it to the sibling fleet's mission `tf-band`, and the
+sibling's own transcript contains the mechanism verbatim:
+
+```js
+// real file: the COMMITTED pre-apply ufo.json (band 32-100)
+const committed = await (await Bun.$`git -C ${ufo} show HEAD:config/ufo.json`.quiet()).text();
+await Bun.write(pre + "/config/ufo.json", committed);
+```
+
+where `pre` is the scratch root `/tmp/ufopre-band`, which the same eval had
+populated by symlinking every `config/` entry to the live substrate
+(`ln -s ${ufo}/config/${e} ${pre}/config/${e}`). `pre/config/ufo.json` was
+therefore a **symlink to the live file**, and `Bun.write` followed it — writing
+the committed `32-100` bytes into
+`/home/vgpnk/Projects/ufo-fsd-alpha/config/ufo.json` itself. Not a git
+operation, which is exactly why the file landed byte-identical to HEAD, why
+`git status` reported it clean, and why no `.bak` was created.
+
+This fits every artifact-level observation independently gathered here: no
+backup at 01:22:15, size `12000` (the committed file's size; the merged file is
+`11999`), `minLanes 64` (a value the delta never writes), empty `diff` against
+the newest `.bak` *and* against `HEAD:config/ufo.json`, and lanes 3/4/5/7/8/12
+all hashing `7efc813b…` at their own read times. The symlink root was cleaned up
+before this review, so the confirmation is the transcript plus that byte/mtime
+forensics — not a live inspection of the symlink. The operator reports the
+dispatch template now forbids substrate writes through symlinks.
 
 **Consequence for method.** Any "the live authority carries X" claim is only
 meaningful with a sha256 and a time window. Lanes were judged against the
@@ -383,19 +403,25 @@ Proven by observation in this mission:
 
 Not proven / unresolved:
 
-- **who** performed the 01:22:15Z rollback, and who performed the 01:30:57Z
-  apply. No lane, and no transcript in this fleet or the sibling fleet
-  `tower1`, records either command against the real config path; the L1's own
-  dry run is proven non-mutating. Candidate context (not proof): sibling fleet
-  `tower1` was launched into the same repo and substrate at 01:19:22Z with 16
-  missions and reasons in its transcripts that `apply.mjs --apply` "would fix
-  the drift for all missions";
+- **who** ran the 01:30:57Z re-apply. Its signature is unambiguous
+  (`apply --apply`: new timestamped backup holding `32-100`, then the six-value
+  merge), and a sibling transcript reasons that "`apply.mjs --apply` would fix
+  the drift for all missions", but no executed command recording it was found in
+  the searches performed. The 01:22:15Z rollback, by contrast, is now attributed
+  and corroborated (§2a);
 - that the live authority stays stable: it demonstrably did not, so **every
   point above that reads the live config is time-bounded**. Re-verify by
   re-reading `config/ufo.json`'s sha256 before trusting any of them;
 - the 100-lane "round ceiling" as a *round* bound: the validator enforces
   `maxLanes` per wave; no cross-wave accounting was found (point 12's framing
   gap).
+
+**Hazard this mission surfaced for other missions.** A scratch root that
+symlinks substrate entries turns an "isolated copy" into a write path to the
+live file. Any verification harness that writes into a scratch `config/ufo.json`
+must materialize (copy) the file, never symlink it — and a live-authority check
+must be pinned to a sha256 at check time, because a concurrent writer can flip
+the band between two reads inside one lane.
 
 ## 6. Reproduce
 
