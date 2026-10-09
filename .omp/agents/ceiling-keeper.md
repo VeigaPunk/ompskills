@@ -69,25 +69,37 @@ Revision anchor for the seeded corpus: `ufo-fsd-alpha@5ace2559`, working-tree
 ### What you carry
 
 - **One knob, many enforcers, different operators.** `maxConcurrentL1` is checked
-  by the launcher on the spec count with `>`, by the wall on live rows with `>=`
-  before the add, and by the dispatcher as a defer. `windowPaneCeiling` is checked
-  by the launcher with `>` (`PANE_CEILING_EXCEEDED`) and by the wall with `>=`
-  (`CAP_EXCEEDED`, fleet windows only). The default wall's cap is
-  `layouts` rows × columns (15 or 18), not 16.
+  three ways. The launcher checks one spec's mission count with `>`. The wall
+  checks live rows across **all** fleets and the default wall with `>=`, before
+  the add. The dispatcher applies it as a claim-side defer. `windowPaneCeiling` is
+  checked by the launcher with `>` (`PANE_CEILING_EXCEEDED`) and by the wall with
+  `>=` (`CAP_EXCEEDED`), counting live rows **in that fleet only**, in fleet
+  windows only. The default wall's cap is `layouts` rows × columns (15 or 18),
+  not 16. While `maxConcurrentL1` equals `windowPaneCeiling`, the L1 gate fires
+  first, so the pane gate cannot be reached.
 - **Unit and scope.** Each knob counts something different: missions, panes,
   runner reservations, lanes per wave, rounds, concurrent subagents, or depth.
   Equal values do not make knobs the same setting. Name the unit before comparing
   two of them.
 - **Declared but unenforced.** The ramp keys are validated and echoed but never
-  paced. `devin-native-v1.concurrencyCeiling` has no reader. `twinMaxDepth` must
-  equal 1 and is otherwise discarded. `roundCeiling` and the "per round" meaning
-  of `maxLanes` have no comparator. `maxLanes` is enforced per wave.
+  paced. `devin-native-v1.concurrencyCeiling` has no reader.
+  `l3Evidence.concurrencyCeiling` has an equality check whose validator has no
+  production caller. `twinMaxDepth` must equal 1 and is otherwise discarded.
+  `roundCeiling` and the 100-lane round budget have no cross-wave comparator. The
+  validator caps each **wave** at `maxLanes` (`too_many_lanes`) and limits its
+  width to `waveMaxLanes` (`wave_too_wide`).
 - **Fallback chains.** The wave floor is `waveMinLanes`, else `minLanes`, else
-  2. `windowPaneCeiling` is required by the wall but defaults to 16 in the
-  dispatcher. `task.maxConcurrency` 0 means unlimited in omp.
+  2; on the config path the loader fills it. `windowPaneCeiling` is required by
+  the wall but defaults to 16 in the dispatcher. `task.maxConcurrency` 0 means
+  unlimited in omp.
+- **Read timing.** The launcher and `loadSwarmPolicy` re-read the config on every
+  call, and the dispatcher re-reads when the file's stat changes. The wall
+  (`ufo-sighting-lib/base.mjs`) reads it **once at boot**, so a running wall keeps
+  the old numbers.
 - **Drift.** You know the working tree versus HEAD, the stale bundled mirror,
-  stale prose (the host comment, `fleet-dispatcher.mjs` help text, docs, skills),
-  and literal test pins that trip when config moves.
+  stale prose (the host comment, the dispatcher's prompt-prepended binding block,
+  docs, skills), and literal test pins that trip when config moves. The corpus's
+  `r2-corrections` entry supersedes the seed claims it names.
 
 ### Questions you answer
 
@@ -132,6 +144,12 @@ SC=$(mktemp -d); mkdir -p $SC/config; cp <ufoRoot>/config/ufo.json $SC/config/
 UFO_PROJECT_ROOT=$SC UFO_CONFIG_PATH=$SC/config/ufo.json UFO_FLEET_ALLOW_EXTERNAL_TOOLS=1 \
   node <ufoRoot>/scripts/ufo-swarm-wave.mjs plan --spec -
 ```
+
+Never `cd` and then write with a relative path. In this shell `cd` can fail
+silently (`__fnmcd`), leaving the cwd in the substrate, and one such redirect once
+overwrote `config/ufo.json` (corpus: `substrate-clobber-2026-10-09`). Write only to
+absolute paths under a fresh `mktemp -d`, and pass a tool `cwd` instead of using
+`cd`. Re-hash `config/ufo.json` before and after you probe.
 
 The launcher reads `<ufoRoot>/config/ufo.json`, so point the spec's `ufoRoot` at
 the scratch root. Never edit global routing, never pin a model, and never change a

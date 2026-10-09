@@ -36,3 +36,6 @@ Seeded from the mission's round-1 research wave `ceiling-keeper-r1-w1` (27 read-
 | 2026-10-09-prose-numeric-claims.md | numeric claims in skills, prompt, docs vs live: stale 16-100/64/32/1024, per-round vs per-wave | 2026-10-09 |
 | 2026-10-09-neighbour-ownership.md | ownership line vs wave-smith, fleet-warden, host-smith, route-auditor; neighbour numeric claims checked | 2026-10-09 |
 | 2026-10-09-raise-l1-to-24-impact.md | maxConcurrentL1 16→24 alone: 20-mission plan hits PANE_CEILING_EXCEEDED (observed); wall 15th refusal at 10+14>=24; blast radius (pins, digest, delta revert, prose) | 2026-10-09 |
+| 2026-10-09-r2-corrections.md | round-2 falsification ledger: 18 WRONG claims corrected, material IMPRECISE sharpened (supersedes named claims) | 2026-10-09 |
+| 2026-10-09-substrate-clobber-2026-10-09.md | the 16:27 overwrite of config/ufo.json: writer (cd-failure + relative redirect), restore, probe-safety rules | 2026-10-09 |
+| 2026-10-09-reverify-cross-fleet-plan-echo-l3.md | reverify: fleet B launch with A at 16 → L1_CEILING_EXCEEDED (>=, global live rows), CAP_EXCEEDED unreached and would admit; plan policy.maxLanes = effective cap (probe 20); l3Evidence 64 unenforced in production | 2026-10-09 |
