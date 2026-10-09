@@ -247,6 +247,62 @@ function assertSafeWriteRoot(value, field, roots) {
     typed("INVALID_SPEC", `${field} ${value} resolves inside the repo's .git directory`);
   }
 }
+/** Check every derived write destination, not only the operator-supplied root.
+ * A child symlink can redirect cpSync/mkdirSync/writeFileSync outside an
+ * otherwise safe stateDir or worktreeRoot. Refuse symlink leaves outright and
+ * require the resolved destination to remain beneath its validated root. */
+function assertSafeWriteTarget(target, root, field, spec) {
+  const roots = {
+    repoLexical: spec.repo,
+    ufoLexical: spec.ufoRoot,
+    repoReal: realpathDeepest(spec.repo).resolved,
+    ufoReal: realpathDeepest(spec.ufoRoot).resolved,
+  };
+  assertSafeWriteRoot(root, `${field} root`, roots);
+  const rootPath = realpathDeepest(root);
+  const targetPath = realpathDeepest(target);
+  if (rootPath.dangling || targetPath.dangling) {
+    typed("INVALID_SPEC", `${field} ${target} resolves through a dangling symlink`);
+  }
+  try {
+    if (lstatSync(target).isSymbolicLink()) {
+      typed("INVALID_SPEC", `${field} ${target} is a symlink — refusing a write through it`);
+    }
+  } catch (error) {
+    if (error instanceof TypedError) throw error;
+    if (error?.code !== "ENOENT") {
+      typed("INVALID_SPEC", `${field} ${target} cannot be inspected safely: ${error.message}`);
+    }
+  }
+  const inside = (child, parent) => child === parent || child.startsWith(parent + path.sep);
+  if (!inside(targetPath.resolved, rootPath.resolved)) {
+    typed("INVALID_SPEC", `${field} ${target} resolves outside its write root ${root}`);
+  }
+  assertSafeWriteRoot(targetPath.resolved, field, roots);
+}
+
+function assertLaunchWriteTargets(spec, plan) {
+  for (const row of plan) {
+    assertSafeWriteTarget(row.worktree, spec.worktreeRoot, `mission ${row.id} worktree`, spec);
+    for (const skill of row.skills) {
+      assertSafeWriteTarget(
+        path.join(row.worktree, ".omp", "skills", skill),
+        row.worktree,
+        `mission ${row.id} skill target`,
+        spec,
+      );
+    }
+    assertSafeWriteTarget(
+      path.join(spec.stateDir, "sessions", row.id),
+      spec.stateDir,
+      `mission ${row.id} session directory`,
+      spec,
+    );
+    assertSafeWriteTarget(row.promptPath, spec.stateDir, `mission ${row.id} prompt`, spec);
+  }
+  assertSafeWriteTarget(path.join(spec.stateDir, "fleet.json"), spec.stateDir, "fleet state", spec);
+}
+
 
 function gitHeadBranch(repo) {
   const result = run(["git", "-C", repo, "rev-parse", "--abbrev-ref", "HEAD"]);
@@ -635,6 +691,7 @@ function copySkill(name, spec, worktree) {
     const source = path.join(dir, name);
     if (existsSync(source)) {
       const target = path.join(worktree, ".omp", "skills", name);
+      assertSafeWriteTarget(target, worktree, `skill ${name} target`, spec);
       mkdirSync(path.dirname(target), { recursive: true });
       cpSync(source, target, { recursive: true });
       return source;
@@ -645,6 +702,7 @@ function copySkill(name, spec, worktree) {
 
 function verbLaunch(spec, authority, options) {
   const plan = buildPlan(spec, authority);
+  assertLaunchWriteTargets(spec, plan);
   const wallCliPath = path.join(spec.ufoRoot, "scripts", "ufo-sighting");
   // Open the wall once for the whole run, then read its mission view: a
   // relaunch must adopt rows the wall already holds (the run id stays reserved
@@ -663,6 +721,7 @@ function verbLaunch(spec, authority, options) {
   const liveById = liveViewById(registry);
   const previousById = new Map((readFleetState(spec)?.missions ?? []).map((mission) => [mission.id, mission]));
   try {
+    assertSafeWriteTarget(spec.stateDir, spec.stateDir, "stateDir", spec);
     mkdirSync(spec.stateDir, { recursive: true });
   } catch (error) {
     typed("STATE_DIR_UNAVAILABLE", `cannot create stateDir ${spec.stateDir}: ${error.message}`);
@@ -732,8 +791,8 @@ function verbLaunch(spec, authority, options) {
       // 2. worktree — reuse an existing one with a warning, never clobber it.
       //    A failed add is this mission's failure, not a mid-fleet abort: the
       //    panes already up must stay recorded in fleet.json.
+      assertSafeWriteTarget(row.worktree, spec.worktreeRoot, `mission ${row.id} worktree`, spec);
       if (existsSync(row.worktree)) {
-        warn(`worktree ${row.worktree} already exists — reusing it as-is`);
         record.worktreeReused = true;
       } else {
         const adoptedWithoutTree = record.paneReused;
@@ -770,7 +829,9 @@ function verbLaunch(spec, authority, options) {
       //    `promptReused` records which happened — a hand-edited prompt is
       //    overwritten).
       const sessionsDir = path.join(spec.stateDir, "sessions", row.id);
+      assertSafeWriteTarget(sessionsDir, spec.stateDir, `mission ${row.id} session directory`, spec);
       mkdirSync(sessionsDir, { recursive: true });
+      assertSafeWriteTarget(row.promptPath, spec.stateDir, `mission ${row.id} prompt`, spec);
       const existingPrompt = existsSync(row.promptPath) ? readFileSync(row.promptPath, "utf8") : null;
       if (existingPrompt === row.prompt) {
         record.promptReused = true;
@@ -839,6 +900,7 @@ function verbLaunch(spec, authority, options) {
 
   // 6. fleet state, written only under <stateDir>.
   const fleetPath = path.join(spec.stateDir, "fleet.json");
+  assertSafeWriteTarget(fleetPath, spec.stateDir, "fleet state", spec);
   writeFileSync(fleetPath, JSON.stringify({
     ok: failures.length === 0,
     fleet: spec.fleet,

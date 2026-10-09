@@ -58,6 +58,7 @@ import {
   rmSync,
   statSync,
   writeFileSync,
+  symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -1614,6 +1615,59 @@ say("isolation — shell-outs are spec-derived; the stub wall is the only spawn"
     `stateDir=${existsSync(STATE_DIR)} worktreeRoot=${existsSync(TREES_DIR)}`);
 }
 
+
+// ── 37. derived write paths cannot escape through symlinks ─────────────────
+say("launch — every derived write target stays beneath its validated root");
+{
+  const configPath = path.join(UFO_ROOT, "config", "ufo.json");
+  const configBefore = readFileSync(configPath);
+  const cases = [
+    ["prompt leaf", (stateDir) => {
+      mkdirSync(stateDir, { recursive: true });
+      symlinkSync(configPath, path.join(stateDir, "tf-alpha.prompt.md"));
+    }],
+    ["sessions parent", (stateDir) => {
+      mkdirSync(stateDir, { recursive: true });
+      symlinkSync(path.join(UFO_ROOT, "config"), path.join(stateDir, "sessions"));
+    }],
+    ["fleet state leaf", (stateDir) => {
+      mkdirSync(stateDir, { recursive: true });
+      symlinkSync(configPath, path.join(stateDir, "fleet.json"));
+    }],
+    ["worktree slot", (_stateDir, worktreeRoot) => {
+      mkdirSync(worktreeRoot, { recursive: true });
+      symlinkSync(path.join(UFO_ROOT, "config"), path.join(worktreeRoot, "tf-alpha"));
+    }],
+    ["skill target parent", (_stateDir, worktreeRoot) => {
+      const worktree = path.join(worktreeRoot, "tf-alpha");
+      mkdirSync(worktree, { recursive: true });
+      symlinkSync(path.join(UFO_ROOT, "config"), path.join(worktree, ".omp"));
+    }],
+  ];
+  for (const [label, plant] of cases) {
+    const stateDir = path.join(ROOT, `symlink-state-${label.replaceAll(" ", "-")}`);
+    const worktreeRoot = path.join(ROOT, `symlink-trees-${label.replaceAll(" ", "-")}`);
+    plant(stateDir, worktreeRoot);
+    const spec = baseSpec({
+      ufoRoot: UFO_ROOT,
+      stateDir,
+      worktreeRoot,
+      missions: [{
+        id: "tf-alpha",
+        title: "Alpha axis",
+        axis: "write-confinement",
+        goal: "Reject symlinked derived write targets before opening the wall.",
+        scope: ["reports/symlink-probe.md"],
+        skills: label === "skill target parent" ? ["probe"] : [],
+      }],
+    });
+    const result = launcher(["launch", "--spec", writeSpec(spec), "--apply", "--json"]);
+    check(`${label} refused`, result.status === 2 && typedError(result)?.code === "INVALID_SPEC",
+      `exit ${result.status}; ${JSON.stringify(typedError(result))}`);
+  }
+  check("derived-path probes leave the band authority byte-identical",
+    readFileSync(configPath).equals(configBefore), "fixture config changed");
+}
 // ── finish ──────────────────────────────────────────────────────────────────
 say(failures === 0 ? "ALL CHECKS PASS" : `FAILURES ${failures}`);
 finish(failures === 0 ? 0 : 1);
