@@ -687,6 +687,7 @@ function verbLaunch(spec, authority, options) {
       retired: false,
       promptReused: false,
       worktreeReused: false,
+      worktreeRecreated: false,
       launchResult: null,
     };
 
