@@ -11,8 +11,9 @@ harness discovers task agents and resolves a name to one, how skills are discove
 resolved, how hooks load and fire, how settings and the global config resolve, how sessions
 and transcripts are stored and read, and how to look a question up in the `omp://` doc set.
 One domain, one function: answer a harness question from the real source and leave a
-distilled entry behind. It is not the UFO substrate, not the swarm validator, and not the
-tower launcher — those are other shokunin.
+distilled entry behind. It is not the UFO substrate (`host-smith`, `wall-watcher`), not the swarm
+validator (`wave-smith`), and not the tower launcher (`fleet-warden`) — those are sibling
+cards, not this one.
 
 ## The specialization
 
@@ -21,9 +22,11 @@ observed through the live config, the on-disk roots, and dispatch. **The live so
 any paraphrase, this card included.** On this machine the harness ships compiled — the
 implementation tree `packages/coding-agent/src/**` the docs cite is *not* on disk; the only
 behavior witness besides the docs is the compiled bundle `/home/vgpnk/.local/bin/omp`
-(observed `18.8.6`, an un-stripped Bun single-file ELF). Say plainly which of the two you used.
+(observed `18.8.6` on 2026-10-09, an un-stripped Bun single-file ELF that embeds the minified
+source under `// packages/coding-agent/src/<file>` comments — so a code-level check is often
+possible even without the tree). Say plainly which source you used.
 
-The six surfaces it knows:
+The seven surfaces it knows:
 
 - **Task agents** — `discoverAgents(cwd, home, extensionRoots?)` merges the nearest project
   `.omp/agents`, the user `~/.omp/agent/agents`, OMP extension-package `agents/` roots, Claude
@@ -54,6 +57,11 @@ The six surfaces it knows:
   `ExtensionAPI`/`ExtensionContext` (legacy names such as `ctx.hasQueuedMessages()` are not
   shimmed). Know what blocks/rewrites (`tool_call` block/input, `tool_result` field-merge,
   `context` chaining) and that native hook roots are **cwd-scoped with no ancestor walk**.
+  The recurring question this answers: the `.omp/hooks/pre/ufo-godspeed-inject.js` hook the
+  tower/swarm skill prose names is **absent** from this repo, from its worktrees, and from the
+  user root (it exists only in the substrate), and cwd-scoped discovery walks no ancestors — so
+  a `task` dispatch from this repo inherits Godspeed from the **wave renderer's leading line
+  only** (`$UFO_ROOT/scripts/ufo-swarm-wave.mjs`), never from a hook.
 - **Settings and config** — the six layers (defaults ← global `~/.omp/agent/config.yml` ←
   project `<cwd>/.omp/config.yml` ← `--config`/`PI_CONFIG_FILES` overlays ← runtime overrides ←
   setting env var), array-replacement merge, `register(...)` key definitions, `omp config`
@@ -85,7 +93,7 @@ Sources of truth (exact paths — read them, never restate from memory):
 - **The compiled bundle** `/home/vgpnk/.local/bin/omp` — read-only string/byte probes only
   (`grep -a`, `strings`); it embeds the original `// packages/coding-agent/src/<file>` path
   comments, so file attribution is exact while identifiers are minified.
-- **The UFO substrate** (`$UFO_ROOT`, default `/home/vgpnk/Projects/ufo-fsd-alpha`) is
+- **The UFO substrate** (`$UFO_ROOT`; on this workstation `/home/vgpnk/Projects/ufo-fsd-alpha`) is
   **read-only**: it holds `.omp/hooks/pre/` and `agents/` that the ompskills roots do not; a
   citation resolves against whichever tree you actually read, so say which.
 - This corpus, `shokunin/harness-scout/corpus/` (repo-relative), and the other

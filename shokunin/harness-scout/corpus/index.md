@@ -47,3 +47,5 @@ on the live docs plus the compiled bundle `/home/vgpnk/.local/bin/omp` (`18.8.6`
 | 2026-10-09-card-contract.md | the shokunin card contract and tranche convention | 2026-10-09 |
 | 2026-10-09-corpus-convention.md | the corpus convention across the 8 corpora | 2026-10-09 |
 | 2026-10-09-verify-card-dispatch.md | verification: card dispatch + hook-install-scope claim | 2026-10-09 |
+| 2026-10-09-r2-verification-corrections.md | r2 verification corrections (append-only ledger) | 2026-10-09 |
+| 2026-10-09-verify-card-r2.md | verification: round-2 card fixes (five claims, all CONFIRMED) | 2026-10-09 |
