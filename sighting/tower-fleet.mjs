@@ -202,7 +202,16 @@ function realpathDeepest(target) {
   let current = path.resolve(target);
   const tail = [];
   while (!existsSync(current)) {
-    if (lstatSync(current, { throwIfNoEntry: false })?.isSymbolicLink()) {
+    // `throwIfNoEntry` suppresses ENOENT only: an intermediate component that
+    // is not a directory (ENOTDIR) still throws, and that must not turn a
+    // refused write root into an untyped error.
+    let isLink = false;
+    try {
+      isLink = lstatSync(current)?.isSymbolicLink() === true;
+    } catch {
+      isLink = false;
+    }
+    if (isLink) {
       return { resolved: path.resolve(target), dangling: true };
     }
     const parent = path.dirname(current);
