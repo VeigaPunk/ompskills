@@ -169,3 +169,24 @@ on the broken form; `ConfNestedTargets` and my own four probes used a clean wall
 - The TTY E2E *refusal* leg is unreachable: `buildOmpArgv` emits a fixed literal array, so no
   launcher-produced argv can trigger `HEADLESS_MISSION_REJECTED`; only the argv **shape** is proven.
 - Bind mounts and TOCTOU between `realpathDeepest` and the later write were not exercised.
+
+## Parent remediation (2026-10-09)
+
+Finding F1 was reproduced against the launcher tip audited above. The integrated
+launcher now applies `assertSafeWriteTarget` to every derived write destination:
+the worktree slot, copied-skill destination, session directory, prompt file, and
+`fleet.json`. It resolves each target through its deepest existing ancestor,
+rejects dangling or symbolic-link leaves, requires the resolved target to remain
+beneath the validated write root, and rechecks before wall open and at each
+write site. This prevents the planted child-symlink escapes reproduced in F1.
+
+Regression evidence: `test/tower-fleet.test.mjs` has five fixture-only symlink
+probes (prompt, sessions parent, fleet state, worktree slot, and skill target
+parent); all refuse as `INVALID_SPEC` before the wall stub is called, and the
+fixture `config/ufo.json` remains byte-identical. The full launcher suite passes.
+
+Residual limitation: a same-user process can race a symlink replacement between
+the final path check and the filesystem operation; bind-mount and adversarial
+TOCTOU resistance were not established by these checks. The launcher's safety
+claim is therefore static symlink containment, not race-free capability
+confinement.
