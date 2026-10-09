@@ -33,8 +33,18 @@ append one row plus one dated entry — never rewrite, reorder, or delete.
 | [2026-10-09-live-config-drift](2026-10-09-live-config-drift.md) | live config vs candidate: one behavioral delta (modelRoles.default) | 2026-10-09 |
 | [2026-10-09-deferred-artifacts](2026-10-09-deferred-artifacts.md) | the four deferred artifacts and the minimal-footprint directive | 2026-10-09 |
 | [2026-10-09-verify-recipe](2026-10-09-verify-recipe.md) | safe dry-run recipe, per-gate signals, exit matrix, no-write proof | 2026-10-09 |
+| [2026-10-09-sighting-dispatch-key-map](2026-10-09-sighting-dispatch-key-map.md) | the full sighting.dispatch key map (16 leaves) and one consumer per key | 2026-10-09 |
+| [2026-10-09-apply-provenance](2026-10-09-apply-provenance.md) | the substrate config/ufo.json .bak trail and what it proves | 2026-10-09 |
+| [2026-10-09-round2-falsification-corrections](2026-10-09-round2-falsification-corrections.md) | round-2 falsification ledger: load-bearing refutes, anchor fixes, caveats — **supersedes the anchors/wording flagged there** | 2026-10-09 |
 
 **Seed method.** Round 1 of mission `host-smith` (fleet `shokunin`): 26 read-only
 swarm lanes, one per item, over the three host files, the four imported substrate
 scripts, the compile gate, and the live global config; every entry distills one
 lane's report. Card: `.omp/agents/host-smith.md`.
+
+**Round 2.** 16 read-only falsification lanes re-derived the 26 round-1 entries
+from primary sources and added two coverage entries (the full
+`sighting.dispatch` key map, and the substrate `.bak` provenance trail). The
+card-contract audit was ALL_CONFIRM. The ledger entry above carries every
+corrected anchor, caveat, and overstated claim; the original entries are left
+in place because the corpus is append-only.
