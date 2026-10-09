@@ -63,26 +63,29 @@ Invoke as `/skill:swarm`, `/swarm on`, `/swarm off`, or `/swarm <task>`.
 The validator is normative. The configured wave band is **16–32 total members**
 (spawn lanes plus resumes counted together) **per wave**, from
 `sighting.dispatch.swarm.waveMinLanes`/`waveMaxLanes`; the per-L1 member
-ceiling `swarm.maxLanes` is **100** — the round ceiling that sequential waves
-of one round share — and a per-spec `maxLanes` may only tighten it,
-never widen it. `swarm.minLanes` **16** is the declared swarm-round floor —
-policy, not a planner gate; what the planner gates is the wave band, and in a
-band-less policy the built-in minimum is **2**. Both wave-band gates fire only
-on spawn-bearing waves, so a resume-only wave is exempt from the floor *and*
-the ceiling and is bounded only by the member cap; a spec cap below the floor
-makes a spawn wave unreachable and fails before any lane spawns. Items must
-expand to pairwise-distinct prompts; a duplicate expansion is a refusal, never
-a silent dedupe. Refusals are typed, and this list is not their full set:
+ceiling `swarm.maxLanes` is **100** — the round budget that sequential waves of
+one round share, and the cap the validator enforces on any single wave — and a
+per-spec `maxLanes` may only tighten it, never widen it. `swarm.minLanes` **16**
+is the declared swarm-round floor — policy, not a planner gate; what the
+planner gates is the wave band, and in a band-less policy the built-in minimum
+is **2**. Both wave-band gates fire only on spawn-bearing waves, so a
+resume-only wave is exempt from the wave floor *and* the wave ceiling and is
+bounded only by the member cap; a spec cap below the floor makes a spawn wave
+unreachable and fails before any lane spawns. Items must expand to
+pairwise-distinct prompts; a duplicate expansion is a refusal, never a silent
+dedupe. Refusals are typed, and this list is not their full set:
 wave/band `empty_wave`, `too_few_lanes`, `wave_too_wide`, `too_many_lanes`,
 `impossible_band`; lane/spec shape `duplicate_expansion`, `duplicate_name`,
 `role_required`, `unknown_role`, `invalid_spec`, `invalid_policy`,
 `invalid_registry`; resume `resume_unknown_member`, `duplicate_resume_id`,
 `resume_role_forbidden`, `resume_item_forbidden`, `resume_meta_forbidden`,
 `message_with_prompt`; and (with route preflight enabled)
-`route_unreachable` — all raised by `plan`/`run` before a lane spawns, except
-`conflicting_assignment`, `unknown_member` and `invalid_agent_id`, which
-`record` raises after the task call returns ids. A refusal is a reason to fix
-the spec or execute the work directly, never a reason to bypass validation.
+`route_unreachable` — all raised by `plan`/`run` before a lane spawns; after
+the task call returns ids, `record` adds `conflicting_assignment`,
+`unknown_member` and `invalid_agent_id` plus the registry/assignment-shape
+refusals (`invalid_registry`, `invalid_registry_path`, `invalid_assignments`).
+A refusal is a reason to fix the spec or execute the work directly, never a
+reason to bypass validation.
 
 Each new spawn carries one explicit taxonomy role: `scout`, `reviewer`,
 `critic`, `connector`, `sentinel`, `executor`, `mutation-tester`, `revenger`,
@@ -93,17 +96,19 @@ values are defaults, item-level wins, and a resume lane inherits the spawn
 binding rather than supplying its own.
 
 Resume assignments must name an owned member from the wave registry or the
-spec's declared `priorRegistry`; unknown or conflicting agent ids fail closed
-before any lane spawns. Keep and use the validator's registry and dispatch
-output for continuity — the registry records each spawn member's name, agent id,
-item and role, and a resume row keeps the owner's handle and inherits that
-binding, which is what lets a later wave resume a member by its recorded agent
-id across turns. A resumed agent retains its existing identity and role; do not
-assign it a new role or a replacement agent. OMP's one `task` call is the
-wave, so kimi's 5-per-700ms launch ramp needs no porting: the harness queues
-lanes beyond its own
-concurrency window, and the ramp constants are recorded in the plan as declared
-pacing policy only.
+spec's declared `priorRegistry`; unknown ids fail closed as
+`resume_unknown_member` before any lane spawns, while conflicting handles fail
+closed at `record`, after the task call returns ids. Keep and use the
+validator's registry and dispatch output for continuity — the registry records
+each spawn member's name, agent id, item and role; a resume row names its owner
+and inherits that binding, with its own `agentId` deliberately null so the
+original spawn row stays the handle's sole owner. That is what lets a later wave
+resume a member by its recorded agent id across turns. A resumed agent retains
+its existing identity and role; do not assign it a new role or a replacement
+agent. OMP's one `task` call is the wave, so kimi's 5-per-700ms launch ramp
+needs no porting: the harness queues lanes beyond its own concurrency window,
+and the ramp constants are recorded in the plan as declared pacing policy
+only.
 
 ## Lane shape: leaf by default
 
@@ -115,8 +120,9 @@ permits a spawn (`labrat`), and the host's `task.maxRecursionDepth` (**2**) is
 what bounds that chain. The host's `task.maxConcurrency` (**32**) is a separate
 cap on lanes running at once; it is not the wave band and not the member
 ceiling — the host cap bounds how many lanes run at once, never how wide one
-wave may be, and lanes from the later waves of a full round queue behind the
-earlier waves.
+wave may be; the later waves of a full round are dispatched after the earlier
+waves, and a wave never relies on the harness concurrency queue to hold its
+lanes.
 
 ## Godspeed posture
 
@@ -164,32 +170,39 @@ does not widen the lane's scope, let it judge, or let it spawn.
   `--fleet` for the registered fleet missions a launcher actually starts, and
   do not claim it exposes task workers.
 - A registered fleet mission is the one wall mission that does dispatch and
-  judge: `sighting/tower-fleet.mjs --spec <fleet.json> [verb]` renders
+  judge: `sighting/tower-fleet.mjs <verb> --spec <fleet.json>` renders
   `sighting/l1-prompt.md` into a fleet L1 pane that runs its own swarm waves.
-  Its verbs are `plan` (the default verb, which writes nothing), `launch
-  --apply`, `status`, and `close --apply [--mission <id>]`; a mutation verb
-  without `--apply` refuses with typed `MUTATION_REQUIRES_APPLY` before touching
-  the wall or the filesystem, every refusal is a typed
-  `{ok:false, code, message}` envelope (exit 2; usage exit 64), and the launcher
-  re-reads the band and both ceilings live from `<ufoRoot>/config/ufo.json`,
-  refusing `CONFIG_UNREADABLE` before any mutation. Each mission gets its own
+  The verb is positional and comes first — omitting it selects `plan` (which
+  writes nothing) — and the others are `launch --apply`, `status`, and `close
+  --apply [--mission <id>]`. A mutation verb without `--apply` refuses with
+  typed `MUTATION_REQUIRES_APPLY` before touching the wall or the filesystem,
+  and every refusal is a typed `{ok:false, code, message}` envelope (exit 2;
+  usage exit 64). Most of them — `INVALID_SPEC`, `L1_CEILING_EXCEEDED`,
+  `PANE_CEILING_EXCEEDED`, `SCOPE_OVERLAP`, `UNKNOWN_MISSION` and the rest —
+  are raised before any mutation; the exception is `LAUNCH_PARTIAL`, which
+  exits 2 after panes and state were already written. Each mission gets its own
   worktree at `<repo>/.tower/worktrees/<fleet>/<id>` on branch
   `tower/<fleet>/<id>`, reused rather than clobbered, and comes up as one
   interactive omp pane — `-p`/`--print`/`--mode` are refused by
   `INTERACTIVE_GUARD`, and the pane's argv keeps `--cwd` equal to its own
-  worktree.
-- The fleet pane is the one per-pane model binding: the launcher passes
+  worktree. The launcher reads its authority once per invocation from
+  `<ufoRoot>/config/ufo.json` — `dispatch.swarm.waveMinLanes`/`waveMaxLanes`/
+  `maxLanes`, `dispatch.maxConcurrentL1`, `sighting.windowPaneCeiling` and
+  `dispatch.missionFormat.l1Alias`, never `dispatch.globalRunnerCeiling` or
+  `swarm.minLanes` — and refuses `CONFIG_UNREADABLE` before any mutation.
+- The fleet pane carries a per-pane alias binding: the launcher passes
   `--model @<sighting.dispatch.missionFormat.l1Alias>` and
   `--config <ufoRoot>/config/mission-nightcall.yml`. That alias names a bucket
   in the operator's global routing table, not a provider/model, so the
   no-per-lane-knob rule above still holds for every lane.
 - Three separate limits, none interchangeable: `sighting.windowPaneCeiling` is
-  the enforced mission capacity of a fleet window (the default wall only reads
-  it as display geometry), `sighting.dispatch.maxConcurrentL1` is the live L1
-  mission ceiling, and `sighting.dispatch.globalRunnerCeiling` is the global
-  runner ceiling. `close --apply` retires wall missions only; it never removes a
-  worktree, and prints the exact `git -C <repo> worktree remove <path>` per
-  mission.
+  the enforced mission capacity of a fleet window (the default wall never reads
+  it — its own capacity is display geometry, `layouts` rows × columns),
+  `sighting.dispatch.maxConcurrentL1` is the live L1 mission ceiling, and
+  `sighting.dispatch.globalRunnerCeiling` is the global runner ceiling.
+  `close --apply` retires wall missions only; it never removes a worktree, and
+  its human-readable output prints the exact
+  `git -C <repo> worktree remove <path>` per mission.
 
 The planner, taxonomy, registry, route authority, and Sighting behavior above
 follow the project UFO skill, `scripts/ufo-swarm-wave.mjs`,
