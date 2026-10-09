@@ -4,22 +4,28 @@ Asked: every skill claim about the fleet launcher, MATCH / DRIFT / SILENT.
 Source: `.omp/skills/tower/SKILL.md` §"Sighting fleet (tower mode)" (lines 127-174) vs
 `sighting/tower-fleet.mjs` @ b251c5a. Lane: `SkillDrift`.
 
-21 claims audited: **17 MATCH, 1 MATCH-understated, 3 DRIFT, 11 SILENT**. The skill invents no
-code name — every code it cites exists in the source — but it lags on three sequencing claims and
-is silent on eleven contracts.
+**21 skill claims audited → 18 MATCH (one understated), 3 DRIFT; plus 11 SILENT source contracts the
+skill never states.** (Corrected in round 2: the source lane's `{claims_audited:21, match:17,
+match_understated:1, drift:3, silent_gaps:11}` tally summed to 32, not 21 — the 11 SILENT are
+*additional* contracts, not a subset of the 21 claims.) The skill invents no code name — every code
+it cites exists in the source — but it lags on three sequencing claims and is silent on eleven
+contracts.
 
 DRIFT (skill line vs source line):
 - **D1 — "a failed worktree add aborts the run outright (`WORKTREE_ADD_FAILED`)"** (SKILL:152-153)
   vs `tower-fleet.mjs:812-817` — the code records it per mission and `continue`s; the run ends
-  `LAUNCH_PARTIAL` (:945-947). The skill even contradicts itself at :154-155 ("still comes up").
+  `LAUNCH_PARTIAL` (:945-947). The skill's :154-155 ("still comes up") is scoped to pane-launch
+  failure, a distinct mode, so the skill is internally consistent — the drift is that the source
+  unifies both modes under the one `LAUNCH_PARTIAL` policy (:812-817 + :945-947).
 - **D2 — "an existing path ... is reused with a warning"** (SKILL:153-154) vs :798-800 — the reuse
   branch sets only `record.worktreeReused = true`; no `warn()` is emitted on that path.
-- **D3 — "a failing wall `complete` aborts first (`COMPLETE_FAILED`)"** (SKILL:171-172) vs
+- **D3 — "a failing wall `complete` aborts first (`COMPLETE_FAILED`, exit 2)"** (SKILL:171-172) vs
   :1197-1204 + :1226-1228 — the failure is recorded per mission, the close continues, and
   `COMPLETE_FAILED` is the final roll-call, not a preemption.
 
-The three DRIFTs share one axis: the skill still describes a first-failure-aborts model, while the
-source implements a uniform partial-failure policy.
+The three DRIFTs share one axis: the skill applies a partial-failure model to pane launch but an
+abort model to the worktree-add and wall-complete cases, while the source implements one uniform
+partial-failure policy across every mission-local failure.
 
 SILENT (source contracts the skill never states) — the ones a card must carry:
 - S1 `close --force` + `PANE_LIVE` (:1169-1171, :1173). S2 `close --mission <id>` + `UNKNOWN_MISSION`

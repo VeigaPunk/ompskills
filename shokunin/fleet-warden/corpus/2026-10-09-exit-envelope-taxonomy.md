@@ -5,7 +5,7 @@ Source: `sighting/tower-fleet.mjs` @ b251c5a. Lanes: `ExitEnvelope`, `VerbsUsage
 
 - `EXIT_OK = 0` (:88), `EXIT_TYPED = 2` (:89), `EXIT_USAGE = 64` (:90).
 - `class TypedError extends Error` (:98) carries `code`; `typed(code, message)` throws it (:105).
-- Top-level catch (:1298-1305): a `TypedError` writes exactly one JSON line `{ok:false, code,
+- Top-level catch (:1299-1305): a `TypedError` writes exactly one JSON line `{ok:false, code,
   message}` to **stderr** and exits 2; anything else writes `code:"UNEXPECTED_ERROR"`, exit 2.
   Stdout is empty on refusal. `warn()` lines may precede the envelope on stderr, so a parser must
   read the LAST line.

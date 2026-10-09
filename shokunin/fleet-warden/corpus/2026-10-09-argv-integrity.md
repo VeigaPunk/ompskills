@@ -4,7 +4,7 @@ Asked: prove argv-array shell-outs and check every option slot for unvalidated s
 Source: `sighting/tower-fleet.mjs` @ b251c5a. Lane: `ArgvIntegrity`.
 
 - Sole spawn primitive: `run()` (:507-508) `spawnSync(argv[0], argv.slice(1), { encoding:
-  "utf8", ...options })`; `shell` appears only in comments (:29, :505), no `execSync`/`exec(`/
+  "utf8", ...options })`; `shell` appears only in comments (:29-30, :505), no `execSync`/`exec(`/
   `bash -c`; no `run()` caller passes the options object, so `shell` is never set.
 - `buildOmpArgv` (:468-485) and `buildLaunchArgv` (:487-503) are pure array builders; the wall
   argv ends with a `--` terminator (:501) before the omp argv (assembled :613).

@@ -16,7 +16,7 @@ and its prompt rendered from `sighting/l1-prompt.md`.
 The domain is the launcher and the fleet contract it enforces — not the missions
 it launches. Sources of truth, exact paths (all repo-relative to this repository):
 
-- `sighting/tower-fleet.mjs` — the launcher. The file header (lines 1–70) is the
+- `sighting/tower-fleet.mjs` — the launcher. The file header (the comment block at :2-69) is the
   contract; four verbs `plan` (default, writes nothing), `launch --apply`,
   `status`, `close --apply`; every verb needs `--spec <fleet.json>` and accepts
   `--json`; `launch`/`close` refuse without `--apply` (exit 2
@@ -31,14 +31,17 @@ it launches. Sources of truth, exact paths (all repo-relative to this repository
   missionFormat.l1Alias` — never a hardcoded number and never a provider/model.
 - `test/tower-fleet.test.mjs` — the hermetic suite (temp fixture root with the
   real `config/ufo.json` copied in, a stub wall CLI, a recursive no-write
-  snapshot). It pins the argv shapes, the refusal codes and their messages, the
-  gate order, the band authority, the symlink write-root refusals, and the wall
-  isolation.
+  snapshot). It pins the argv shapes, a subset of the refusal codes and their messages (8 of
+  the launcher's ~25 code literals; the rest are corpus-only), the gate order, the
+  band authority, the symlink derived-target refusals (exit + `INVALID_SPEC` only —
+  the `assertSafeWriteRoot` zone messages are unpinned), and the wall isolation.
 - `.omp/skills/tower/SKILL.md` (§ "Sighting fleet (tower mode)") — the tower
   skill's summary. The launcher source wins over the skill: the skill's fleet
   paragraph predates `close --force`, `PANE_LIVE`, `RUN_ID_RESERVED`, `WALL_ABSENT`,
   and the symlink write-root refusals (see the corpus drift entry).
-- Fleet state artifacts (never repo edits): `<stateDir>/fleet.json` (written by
+- Fleet state artifacts (state-directory artifacts, never committed by the
+  launcher — but containment is negative, so a spec can point them inside a tracked
+  repo directory): `<stateDir>/fleet.json` (written by
   `launch`), `<stateDir>/<id>.prompt.md`, `<stateDir>/sessions/<id>/`,
   `<stateDir>/rounds/<id>-r<N>.md` and `<stateDir>/reports/<id>/` (written by the
   mission), and the launcher's registry reads from the wall CLI
@@ -46,7 +49,8 @@ it launches. Sources of truth, exact paths (all repo-relative to this repository
 
 The contract, as the source carries it:
 
-- **Fleet spec schema.** Required: `fleet` (`^[a-z0-9][a-z0-9_-]{0,47}$`), `repo`,
+- **Fleet spec schema.** Required: `fleet` (`^[a-z0-9][a-z0-9_-]{0,47}$` — a regex tested on a
+  coerced string, so a non-string `fleet` is accepted; see corpus `spec-validation-refusals`), `repo`,
   `ufoRoot`, and a non-empty `missions[]`, each mission `{id, title, axis, goal,
   scope[], skills?}` with `id` matching `^[A-Za-z][A-Za-z0-9_-]{0,63}$`. Defaults:
   `base` = the repo HEAD branch (via `git rev-parse --abbrev-ref HEAD`),
@@ -78,10 +82,13 @@ The contract, as the source carries it:
 - **Partial failure is recorded, never an abort.** A per-mission failure (worktree
   add, wall launch, unparseable wall output, a reserved run id, a typed write-root
   refusal) is recorded on that mission; the panes already up keep running; and
-  `<stateDir>/fleet.json` is written either way — then the run exits 2
-  `LAUNCH_PARTIAL`.
-- **Relaunch is idempotent.** A run id stays reserved while ANY wall row holds it
-  (live, or a retired `completed[]`/`stopped[]` row). A live row is adopted and
+  `<stateDir>/fleet.json` is written for every **recorded** per-mission failure, then
+  the run exits 2 `LAUNCH_PARTIAL` — but that write (:906-907) is in no try, so an fs
+  error there escapes as untyped `UNEXPECTED_ERROR` (exit 2) with no `fleet.json`
+  (corpus `launch-partial-policy`).
+- **Relaunch is idempotent.** A run id stays reserved while any wall row the `status --lite` view exposes holds
+  it (live, or a retired `completed[]`/`stopped[]` row) — a truncated retired slice
+  or a ghost row surfaces only as the wall's own `RUN_ID_CONFLICT`. A live row is adopted and
   reused, never re-launched; a retired row is recorded as `RUN_ID_RESERVED` with
   its remedy; a byte-identical prompt is left untouched (`promptReused`). Liveness
   is read only from the wall's live view (`status --lite` `missions[]`,
@@ -93,7 +100,8 @@ The contract, as the source carries it:
   `status --lite` wall call.
 - **`close` never removes a worktree.** It refuses `PANE_LIVE` while any target is
   live unless `--force`; refuses `WALL_ABSENT`; `UNKNOWN_MISSION` for an unknown
-  `--mission` id; skips a mission absent from the wall; records a wall `complete`
+  `--mission` id (an empty `--mission ''` silently widens to the whole fleet —
+  corpus `close-policy` hole A); skips a mission absent from the wall; records a wall `complete`
   failure per mission and ends `COMPLETE_FAILED` (exit 2) after the others land.
   It prints the exact per-path `git -C <repo> worktree remove <path>` and `--json`
   emits `worktreeRemoval: "manual-only"`.
@@ -102,21 +110,27 @@ The contract, as the source carries it:
   with an explicit argv array — never a shell string built from spec content. The
   omp argv stays interactive (no `-p`/`--print`, no `--mode`). Writes land only
   under `stateDir`, `worktreeRoot`, and the mission worktrees. Containment is
-  **negative** and relative to the declared `ufoRoot`: the three forbidden zones
-  are `ufoRoot`, the repo root, and `<repo>/.git`, and both write roots are refused
-  (`INVALID_SPEC`) when their realpath lands in one of them — including through a
-  dangling or leaf symlink. A symlinked `stateDir` root itself escapes the load
-  gate and is refused only at launch, after the wall opens, as
-  `STATE_DIR_UNAVAILABLE`; a symlinked `worktreeRoot` root is not leaf-guarded at
-  all (see the corpus `write-confinement` entry). The substrate `<ufoRoot>` is
-  never written.
+  **negative** and relative to the declared `ufoRoot`: both write roots are refused
+  (`INVALID_SPEC`) when their realpath lands **inside** `ufoRoot` or `<repo>/.git` or
+  **equals** the repo root (the repo-root zone is equality-only — the default
+  `stateDir`/`worktreeRoot` deliberately sit inside the repo), including through a
+  dangling or leaf symlink. A symlinked `stateDir` root whose target is outside the
+  forbidden zones escapes the load gate and is refused only at launch, after the wall
+  opens, as `STATE_DIR_UNAVAILABLE` (one resolving into a zone is still refused at
+  load); a symlinked `worktreeRoot` root is not leaf-guarded at
+  all (see the corpus `write-confinement` entry). The launcher's own writes never
+  enter `<ufoRoot>` — the guarantee is spec-relative (a lying `ufoRoot` removes the
+  zone entirely), and the wall CLI and `git worktree add` it spawns do write under
+  their own roots.
 
 Questions it answers: what a verb does and which flags it accepts; the exact fleet
 spec field set and defaults; which typed refusal code (and exit code) a given bad
 input produces and where it fires; how a mission's worktree, branch, skills, and
 prompt are created and what relaunch does; how the launcher reads liveness and
 what `status`/`close` reconcile; which ceiling is which and who reads it; and
-which write-safety invariant a given code path does or does not enforce.
+which write-safety invariant a given code path does or does not enforce. (The full
+refusal-code set is enumerated in the corpus `exit-envelope-taxonomy` and
+`skill-source-drift` entries.)
 
 ## The corpus protocol
 

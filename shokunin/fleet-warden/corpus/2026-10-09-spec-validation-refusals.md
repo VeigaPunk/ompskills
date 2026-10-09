@@ -31,7 +31,9 @@ and die at the id check.
 
 Quirks (live): `maxTime` is a token check only — `null` → `"null"` and `3600` → `"3600"` are
 **accepted** (:390 String-coercion); the `startsWith("-")` clause (:391) is redundant with the
-pattern. `skills: undefined`/`null` silently normalize to `[]` (:361-362). Scope `"./src/"` →
+pattern. The same coercion applies to `fleet` (:327 `FLEET_PATTERN.test(raw.fleet ?? "")` — a
+number or boolean passes the regex on its string form and the raw value is kept) and to `base`
+(:387 String-coercion: `null` → `"null"`, `123` → `"123"`, a leading-dash value accepted). `skills: undefined`/`null` silently normalize to `[]` (:361-362). Scope `"./src/"` →
 `"src"`, `" a/b "` → `"a/b"`; `"/"` dies at :178 (empty-after-strip), not :183.
 
 UNKNOWN: the :314 detached-HEAD disjunct (needs a detached checkout) was not exercised.

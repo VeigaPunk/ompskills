@@ -19,8 +19,8 @@ All four wall calls funnel through `wallCli` (:519-521) `run(["bash", <ufoRoot>/
 Verbs the launcher only names, never spawns: `resume`, `remove`, `reconcile` (:786-787, :865,
 :1142, :1185) — operator guidance strings.
 
-Liveness sourcing (the rule the header states at :46-50):
-- Only `missions[]` sources liveness: `wallRegistry` (:966) `active = wall.missions`, and
+Liveness sourcing (the rule the header states at :42-46):
+- Only `missions[]` sources liveness: `wallRegistry` (:966) `active = Array.isArray(wall.missions) ? wall.missions : []` (:968), and
   `liveViewById` (:576-578) maps `registry.active` only.
 - `wallRowLive` (:558-563): `levels.l1` decides; a live-view row with no numeric level reads LIVE
   (:562 `return true`); an absent row reads NOT-live.
@@ -32,7 +32,7 @@ Liveness sourcing (the rule the header states at :46-50):
 
 Fields relied on (launcher → wall): `missions[]`, `completed[]`, `stopped[]`,
 `completedMissionCount`/`stoppedMissionCount` (truncation warning :981-983),
-`staleMissionCount` (:993), `status` (:995), `hatch` (:996), per-row `runId`/`missionId` (:544-546),
+`staleMissionCount` (:993), `status` (:997), `hatch` (:998), per-row `runId`/`missionId` (:544-546),
 `levels.l1` (:559), `phase` (:566), `paneId`, `fleet`, `completedAt`/`stoppedAt`.
 
 Retired lists are the wall's display slice capped at 50; the truncation warning tells the operator

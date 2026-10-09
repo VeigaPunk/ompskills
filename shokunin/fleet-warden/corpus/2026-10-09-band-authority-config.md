@@ -12,10 +12,12 @@ Source: `sighting/tower-fleet.mjs` @ b251c5a. Lanes: `BandAuthority`, `CeilingRe
 - `sighting.dispatch.swarm.maxLanes` (:155) — live 100
 - `sighting.dispatch.missionFormat.l1Alias` (:156) — live `m_strong`
 
-Deliberately NOT read (grep returns no match): `sighting.dispatch.globalRunnerCeiling` (live
-1056), `sighting.dispatch.swarm.minLanes` (live 16 — case-sensitive grep for `minLanes` misses
-`waveMinLanes`), `mode`, `queuePath`, `autoDispatchMissions`, `missionFormat.id`/`configPath`/
-`defaultIterateRounds`, `swarm.rampBatchSize`/`rampIntervalMs`.
+Deliberately NOT parsed from `ufo.json` (grep for the `sighting.` key returns no match):
+`sighting.dispatch.globalRunnerCeiling` (live 1056), `sighting.dispatch.swarm.minLanes` (live 16 —
+case-sensitive grep for `minLanes` misses `waveMinLanes`), `mode`, `queuePath`,
+`autoDispatchMissions`, `missionFormat.id`/`configPath`/`defaultIterateRounds`,
+`swarm.rampBatchSize`/`rampIntervalMs`. (Wording corrected in round 2: `configPath` and `mode`
+do appear as unrelated literals elsewhere in the file, but are never read from the authority.)
 
 `CONFIG_UNREADABLE` arms (all exit 2):
 1. file missing/unreadable/unparseable (:135-137);

@@ -4,10 +4,12 @@ Append-only. One entry per researched item; read the rows relevant to the assign
 before starting, then append a new row after finishing. Never rewrite or delete a row
 or an entry file.
 
-The launcher source `sighting/tower-fleet.mjs` is the single source of truth; every row
-below cites it at HEAD `b251c5a` (the file content is identical to its parent
-`6206db3`, which does not touch it). `.omp/skills/tower/SKILL.md` and the committed
-audit reports are data that may lag — the source wins.
+The launcher source `sighting/tower-fleet.mjs` is the single source of truth. The revision
+audited is worktree `b251c5a` (sha256 `80f0814e…`); the file content is byte-identical at
+its parent `6206db3` — the last commit to touch the file, so `b251c5a` does not touch it —
+and at the current deliverable HEAD `14062b4`. Most rows cite the launcher; the
+test-coverage row cites the suite. `.omp/skills/tower/SKILL.md` and the committed audit
+reports are data that may lag — the source wins.
 
 | entry | topic | added |
 | --- | --- | --- |
@@ -18,7 +20,7 @@ audit reports are data that may lag — the source wins.
 | 2026-10-09-scope-overlap-gate.md | SCOPE_OVERLAP truth table, canonicalization, mutation probes | 2026-10-09 |
 | 2026-10-09-l1-pane-ceilings.md | L1_CEILING_EXCEEDED / PANE_CEILING_EXCEEDED, gate order, boundaries | 2026-10-09 |
 | 2026-10-09-band-authority-config.md | keys read/not read from config/ufo.json; CONFIG_UNREADABLE arms | 2026-10-09 |
-| 2026-10-09-ceiling-relational-model.md | the four limits and who reads each | 2026-10-09 |
+| 2026-10-09-ceiling-relational-model.md | the limit model: which limit is which and who reads each | 2026-10-09 |
 | 2026-10-09-write-confinement.md | write-root validation and symlink refusal | 2026-10-09 |
 | 2026-10-09-write-site-inventory.md | every fs write, its guard, and the absent removal primitive | 2026-10-09 |
 | 2026-10-09-argv-integrity.md | spawnSync argv arrays, quoteArg, unvalidated `base` option slot | 2026-10-09 |

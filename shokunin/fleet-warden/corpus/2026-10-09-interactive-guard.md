@@ -5,9 +5,9 @@ Source: `sighting/tower-fleet.mjs` @ b251c5a. Lane: `InteractiveGuard`.
 
 - `interactiveGuard(tokens, missionId)` (:454-466) refuses, by exact equality, `-p` (:459) and
   `--print`; by equality `--mode` (:462); and by `startsWith("--mode=")` (:462) — the only prefix
-  match. `--model` and `--print-thoughts` are safe (the launcher itself emits both, :474/:477),
+  match. `--model` and `--print-thoughts` are safe (the launcher itself emits both, :475/:477),
   pinned by `test/tower-fleet.test.mjs:1486-1489`.
-- `buildOmpArgv` calls it with `argv.slice(1)` (:483, excluding the literal `omp`) before returning
+- `buildOmpArgv` calls it with `argv.slice(1)` (:482, excluding the literal `omp`) before returning
   (:484). It runs inside `buildPlan` (:601), which `verbLaunch` calls (:707) strictly before the
   first spawn (`wallCli "open"` :714, `omp worktree add` :805, pane launch :852) — so an
   `INTERACTIVE_GUARD` refusal means zero mutation and zero spawn.

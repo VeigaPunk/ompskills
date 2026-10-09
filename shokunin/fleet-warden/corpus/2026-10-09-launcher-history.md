@@ -44,11 +44,14 @@ B3 argv-only shell-out — from `3a688c7`; `shell: true` **never appears in any 
 B4 interactive guard — from `3a688c7`; construction-enforced, the :483 check is a tautological
 tripwire.
 B5 partial failure — code `3dee568`, bullet wording `a9c5f02`, one-cause/secondary `803f1ad`.
-B6 idempotent relaunch — `a9c5f02`/`0612491`/`599daa4`/`803f1ad`/`e27901d`.
+B6 idempotent relaunch — `a9c5f02`/`0612491`/`599daa4`/`803f1ad`/`e27901d`/`efd6d88` (the last builds
+the stable launch-record key set at :747-751).
 B7 live-view liveness — `26313e6`; likely regressed at `599daa4`, restored at `26313e6`.
 B8 status reconciliation, zero writes — `a9c5f02`.
-B9 close PANE_LIVE/`--force`, COMPLETE_FAILED — `a9c5f02`/`a251c5f`/`6206db3`.
-Verbs/exit block (:17-19) — from `3a688c7`. One usage drift: `[--force]` was added to the `close`
+B9 close PANE_LIVE/`--force`, COMPLETE_FAILED — `a9c5f02` (guards), `a251c5f` (per-mission record;
+`3a688c7` had a typed abort), `5c2df5c`/`7f8ced2` (ghost naming on the absent-skip path), `6206db3`
+(disposition reporting).
+Verbs/exit block (the verb list is :11-15; :17-19 is the default-verb + exit-code paragraph) — from `3a688c7`. One usage drift: `[--force]` was added to the `close`
 usage line with the `PANE_LIVE` guard in `a9c5f02`.
 
 Reverse drift (the code enforces MORE than the header names): `WALL_ABSENT` (:1164-1167),
@@ -59,7 +62,12 @@ Regression windows (all closed): mid-fleet abort only in `3a688c7`; the retired-
 between `599daa4` and `26313e6` (spurious `PANE_LIVE` + a dropped mission); the silent no-op close on
 an absent wall until `ecc2f2e`.
 
-UNKNOWN: the `b8a639b` hunks were not fetched (subject+pickaxe only); the `ea8f6a7` "01:22Z clobber"
-incident is not evidenced in this repo; the wall's display-slice cap constant was not traced.
+The `ea8f6a7` "01:22Z clobber" incident referenced in its message **is** documented in this repo's
+committed reports (`reports/tf-audit-band.md:30`: the authority file was clobbered at 01:22Z by a
+lane writing through a symlink and restored at 01:31Z; also `reports/tf-probe-band.md:89,100` and
+`reports/tf-audit-tests.md:136`) — corrected in round 2.
+
+UNKNOWN: the `b8a639b` hunks were not fetched (subject+pickaxe only); the wall's display-slice cap
+constant was not traced.
 
 Evidence: lane `HistoryIntent` (blob sha identity, per-commit diffs, pickaxe).

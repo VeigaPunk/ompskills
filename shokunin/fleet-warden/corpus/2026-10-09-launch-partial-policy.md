@@ -3,7 +3,7 @@
 Asked: the partial-failure policy, adversarially.
 Source: `sighting/tower-fleet.mjs` @ b251c5a. Lane: `LaunchPartial` (critic) + header :33-35.
 
-- Every mission runs inside a per-mission try in the `verbLaunch` loop (:893-901 catch): a failure
+- Every mission runs inside a per-mission try in the `verbLaunch` loop (catch at :892, body :893-901): a failure
   is recorded on that mission via `recordMissionFailure` (:627-634) and the loop continues — an
   `omp worktree add` failure (:812-817 `WORKTREE_ADD_FAILED`), a wall launch failure
   (:855-870 `LAUNCH_FAILED`), an unparseable zero-exit wall stdout (:874-878 `WALL_OUTPUT`), a
@@ -16,7 +16,7 @@ Source: `sighting/tower-fleet.mjs` @ b251c5a. Lane: `LaunchPartial` (critic) + h
   `code`; the code lives only in `missions[].failure.code`.
 - `fleet.json` is written after the loop (:904-928), `ok: failures.length === 0`; then, if failures
   exist, the run throws `LAUNCH_PARTIAL` (:945-947) — exit 2.
-- Human mode prints `FAILED ${record.id} · ${record.failure.code} · worktree ${path}` (:935), a
+- Human mode prints ``FAILED `${record.id} · ${record.failure.code} · worktree ${record.worktree}` `` (:935), a
   secondary "also hit" line (:937), and `launched <id>` for the rest (:940).
 
 Critic seams (reproduced):

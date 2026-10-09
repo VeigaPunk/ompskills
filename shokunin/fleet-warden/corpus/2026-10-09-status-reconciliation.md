@@ -13,7 +13,7 @@ Source: `sighting/tower-fleet.mjs` @ b251c5a (`verbStatus` :1006-1148). Lane: `S
   `onWallNotInState` (:1037), `inStateNotOnWall` (:1038), `foreignFleetRows` (:1117 — only ever
   populated from live `missions[]`, never retired arrays), `retiredRows` (:1118 — owned ids only),
   `staleMissionCount` (:1119, safe-integer-guarded).
-- Per-row `source` precedence: `wall` (live, :1048) > `wall-retired` (:1072, display status =
+- Per-row `source` precedence: `wall` (live, :1048) > `wall-retired` (:1075; branch opens :1070 — display status =
   `wallRowDisposition`, `retired:true`, `retiredAt` = `completedAt ?? stoppedAt`) > `state` > `spec`
   (:1092 ternary; `stateMissions` iterated before `spec.missions`). A `"wall"` row carries
   `fleet`/`foreignFleet`/`inFleetState`/`inSpec`; `"wall-retired"` drops `fleet`/`foreignFleet` and

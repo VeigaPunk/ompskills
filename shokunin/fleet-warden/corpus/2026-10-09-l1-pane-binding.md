@@ -6,8 +6,8 @@ Source: `sighting/tower-fleet.mjs` @ b251c5a. Lane: `PaneBinding`.
 `buildOmpArgv` (:468-485) returns, in order: `omp`, `--cwd <worktree>`, `--session-dir
 <stateDir>/sessions/<id>`, `--max-time <spec.maxTime>`, `--model @<l1Alias>`, `--config
 <ufoRoot>/config/mission-nightcall.yml`, `--print-thoughts`, `--auto-approve`,
-`@<stateDir>/<id>.prompt.md` (positional, last). Then `interactiveGuard(argv.slice(1))` (:483) and
-`argv[2] === worktree` (:484).
+`@<stateDir>/<id>.prompt.md` (positional, last). Then `interactiveGuard(argv.slice(1), mission.id)` (:482) and
+`argv[2] !== worktree` (:483).
 
 `buildLaunchArgv` (:487-503) is the outer wall envelope: `bash <ufoRoot>/scripts/ufo-sighting
 launch --run-id <id> --session-id <id> --title <title> --fleet <fleet> --cwd <worktree> --no-open

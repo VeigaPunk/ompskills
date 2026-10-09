@@ -33,8 +33,12 @@ Flags (from the sentinel lanes; a card must not overstate the contract):
   into a repo source dir (exit 0); `stateDir: "../outside"` writes fully outside the repo (exit 0).
   Do NOT state "writes are confined to `<repo>/.tower/…`" as a launcher-enforced property.
 - **Zones are relative to the declared `ufoRoot`/`repo`** — the spec's own strings; a spec that
-  declares a decoy `ufoRoot` is unprotected against the real substrate (but the same `ufoRoot` is
-  where the wall CLI runs, so such a spec attacks only its own decoy).
+  declares a decoy `ufoRoot` removes the substrate zone entirely and can write a substrate-shaped
+directory elsewhere (reproduced in round 2: a decoy `ufoRoot` plus a separate `stateDir`/`worktreeRoot`
+let `launch --apply` create `config/{fleet.json,prompt,sessions}` and a worktree outside the real
+substrate while the wall ran on the decoy). Do NOT claim "the substrate is never written"
+absolutely — the launcher's own guarantee is spec-relative; the wall CLI and `git worktree add` it
+spawns write under their own roots.
 - **A symlinked `stateDir` root is refused only late** — at :727, *after* `wallCli open` (:714) and
   the registry read (:722); the load gate (:401) and the pre-flight (:708) let it through. The
   `:727` throw is caught by :729-731 and re-emitted as `STATE_DIR_UNAVAILABLE`, not `INVALID_SPEC`.

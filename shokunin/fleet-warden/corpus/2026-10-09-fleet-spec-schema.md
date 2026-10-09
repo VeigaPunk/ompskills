@@ -7,7 +7,7 @@ Top level (`loadSpec` :319):
 - `fleet` — required, `FLEET_PATTERN` `^[a-z0-9][a-z0-9_-]{0,47}$` (:92, :327-329).
 - `repo` — required non-empty string (:330).
 - `ufoRoot` — required non-empty string; checked twice (pre-flight :1283-1285, then :331).
-- `missions` — required non-empty array (:335).
+- `missions` — required non-empty array (:335 reads it; the guard is :336).
 - `base` — optional; default = repo HEAD via `git -C <repo> rev-parse --abbrev-ref HEAD`
   (`gitHeadBranch` :310), else `String(raw.base).trim()` (:387). Trimmed only — no dash guard.
 - `stateDir` — optional; default `.tower/fleets/<fleet>` resolved under `repo` (:393).
@@ -20,7 +20,7 @@ Per mission (normalized :371): `id` (`MISSION_ID_PATTERN` `^[A-Za-z][A-Za-z0-9_-
 optional (`undefined`/`null` → `[]`). No mission-level model field.
 
 `plan --json` echoes `ok, verb, writes, fleet, repo, base, stateDir, worktreeRoot, roundCeiling,
-maxTime, band, missions` — `ufoRoot` is NOT echoed (:655-676).
+maxTime, band, missions` — `ufoRoot` is NOT echoed (the `emitJson({...})` spans :657-677).
 
 Live fleet `/home/vgpnk/Projects/ompskills/.tower/fleets/shokunin/spec.json`: 8 missions, base
 `main`, roundCeiling `2`, maxTime `4h`.
