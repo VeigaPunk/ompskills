@@ -123,3 +123,30 @@ The verbs, config keys, and ceilings above mirror `omp worktree --help`,
 `config/ufo.json`, `scripts/ufo-sighting`, and the project UFO skill as of
 writing. The live configuration and those sources win over this prose; re-read
 them before dispatch.
+
+## Sighting fleet (tower mode)
+
+`sighting/tower-fleet.mjs` turns the wall into a declared fleet: one
+interactive omp pane per L1 mission. Verbs: `plan` (default, writes nothing)
+· `launch --apply` · `status` · `close --apply`; a mutation verb without
+`--apply` refuses (`MUTATION_REQUIRES_APPLY`). The fleet spec JSON declares
+`fleet`, `repo`, `base`, `ufoRoot`, and missions (`id`, `title`, `axis`,
+`goal`, pairwise-disjoint repo-relative `scope` prefixes, `skills`);
+`launch --apply` gives each mission its own worktree under
+`<repo>/.tower/worktrees/<fleet>/<id>` on branch `tower/<fleet>/<id>`,
+copies its skills in, renders `sighting/l1-prompt.md` as the pane's prompt,
+and opens its pane on the `ufo_sighting` wall's fleet window
+(`launch --fleet <fleet>`) — at most `sighting.dispatch.maxConcurrentL1`
+live L1 panes, bounded per window by `sighting.windowPaneCeiling`. Each pane
+is the mission's self-iterating coordinator, dispatching swarm waves of
+`sighting.dispatch.swarm.waveMinLanes`–`waveMaxLanes` lanes with up to
+`maxLanes` lanes per round — every number read live from
+`<ufoRoot>/config/ufo.json`, never hardcoded, and routing only through
+`--model @<missionFormat.l1Alias>` (bare `m_*` aliases; never a pinned
+provider/model). Writer isolation is enforced at the fleet gate
+(`SCOPE_OVERLAP` refuses intersecting mission scopes) and inside each
+mission: a lane that writes gets its own worktree and a disjoint path set,
+otherwise lanes are read-only. `close --apply` completes wall missions only;
+it never removes a worktree automatically — it prints the exact
+`git -C <repo> worktree remove <path>` per mission and warns that unmerged
+work must be preserved first.
