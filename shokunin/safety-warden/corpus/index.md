@@ -29,3 +29,21 @@ rules. Append-only: one row per entry, in the order entries were added; never re
 | [2026-10-09-corpus-convention.md](2026-10-09-corpus-convention.md) | index + entry shape, append-only | 2026-10-09 |
 | [2026-10-09-host-apply-dry-run.md](2026-10-09-host-apply-dry-run.md) | the third write surface's gate and its gaps | 2026-10-09 |
 | [2026-10-09-cross-surface-guard-pattern.md](2026-10-09-cross-surface-guard-pattern.md) | one invariant, three parameters | 2026-10-09 |
+| [2026-10-09-r2-verify-confinement-model.md](2026-10-09-r2-verify-confinement-model.md) | card overclaim found and corrected | 2026-10-09 |
+| [2026-10-09-r2-verify-write-target-table.md](2026-10-09-r2-verify-write-target-table.md) | six rows re-derived and re-run | 2026-10-09 |
+| [2026-10-09-r2-verify-zone-denylist.md](2026-10-09-r2-verify-zone-denylist.md) | denylist confirmed; lexical-parent nuance | 2026-10-09 |
+| [2026-10-09-r2-verify-target-arms.md](2026-10-09-r2-verify-target-arms.md) | arms confirmed; in-root link refusal mutation-tested | 2026-10-09 |
+| [2026-10-09-r2-verify-substrate-ban.md](2026-10-09-r2-verify-substrate-ban.md) | honest path byte-identical; zone spec-relative | 2026-10-09 |
+| [2026-10-09-r2-verify-scope-gate.md](2026-10-09-r2-verify-scope-gate.md) | six messages, ordering, F2, no derived path | 2026-10-09 |
+| [2026-10-09-r2-falsify-hardlink.md](2026-10-09-r2-falsify-hardlink.md) | hardlink escape independently reproduced | 2026-10-09 |
+| [2026-10-09-r2-falsify-toctou.md](2026-10-09-r2-falsify-toctou.md) | swap race reproduced 3/3; no fd primitive in source | 2026-10-09 |
+| [2026-10-09-r2-verify-removal.md](2026-10-09-r2-verify-removal.md) | removal rules confirmed against CLI and close output | 2026-10-09 |
+| [2026-10-09-r2-verify-siblings.md](2026-10-09-r2-verify-siblings.md) | substrate and host claims confirmed; spawn-gate caveat | 2026-10-09 |
+| [2026-10-09-r2-verify-card-shape.md](2026-10-09-r2-verify-card-shape.md) | card conforms; H3 subsections are precedented | 2026-10-09 |
+| [2026-10-09-r2-verify-corpus-shape.md](2026-10-09-r2-verify-corpus-shape.md) | 1:1 index↔file mapping; one heading omission | 2026-10-09 |
+| [2026-10-09-r2-gap-bind-mount.md](2026-10-09-r2-gap-bind-mount.md) | bind mount escapes; residual now observed | 2026-10-09 |
+| [2026-10-09-r2-gap-enotdir-roots.md](2026-10-09-r2-gap-enotdir-roots.md) | ENOTDIR typed on launch; missing repo accepted lexically | 2026-10-09 |
+| [2026-10-09-r2-gap-close-write-sites.md](2026-10-09-r2-gap-close-write-sites.md) | close writes nothing; :906 shape confirmed | 2026-10-09 |
+| [2026-10-09-r2-gap-scope-edges.md](2026-10-09-r2-gap-scope-edges.md) | lexical gate confirmed; no length ceiling | 2026-10-09 |
+| [2026-10-09-r2-gap-host-ufo-json-write.md](2026-10-09-r2-gap-host-ufo-json-write.md) | rename replaces a symlink, does not follow it | 2026-10-09 |
+| [2026-10-09-r2-connector-provenance.md](2026-10-09-r2-connector-provenance.md) | claim→entry→report table; two over-broad phrases | 2026-10-09 |

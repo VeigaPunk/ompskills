@@ -66,8 +66,11 @@ race-free capability confinement.
   bare, and callers re-type ENOTDIR themselves (e.g. `assertSafeWriteTarget`'s
   "cannot be inspected safely" at :276-277).
 - **`assertSafeWriteRoot(value, field, roots)`** (:237-252) is a four-condition
-  **denylist**, checked on both the lexical and the realpath-resolved path with
-  both comparison sides realpath-resolved: refuse `dangling` (:239-241); refuse
+  **denylist**: the candidate is always realpath-resolved, and each zone is tested
+  against **both** its lexical and its realpath-resolved face (`roots.ufoLexical`
+  / `roots.ufoReal`, `repoLexical` / `repoReal`) — so a symlinked parent cannot
+  launder the write, but the parent side of a comparison is not itself
+  realpath-resolved. Refuse `dangling` (:239-241); refuse
   inside `ufoRoot` — lexical **or** real, separator-exact equality-or-prefix
   (:243-245, "the substrate is never written"); refuse **exactly** the repo root
   (equality only, :246-248 — subdirs and sibling prefixes pass); refuse inside
@@ -83,8 +86,8 @@ race-free capability confinement.
   leaf (:284).
 - **`assertLaunchWriteTargets(spec, plan)`** (:287-307) is a **pre-flight** over
   every derived destination, run at :708 — **before** the wall is opened (:714) —
-  so a pre-flight refusal leaves zero filesystem mutation anywhere. It is
-  supplemented by a per-site recheck immediately before each write.
+  so a pre-flight refusal leaves zero filesystem mutation and zero wall calls. It
+  is supplemented by a per-site recheck immediately before each write.
 
 Write destination → guarding assert (both fire at tip):
 
@@ -108,7 +111,11 @@ enforced by the `ufoRoot` zone on both write roots (load :401-402) and on every
 derived target's resolved leaf (:284). The ban is **spec-relative**: the zone is
 built from `spec.ufoRoot` (:333 lexical, :399 real) — the only realness anchor is
 `loadBandAuthority`'s *read* of `<ufoRoot>/config/ufo.json` (`CONFIG_UNREADABLE`
-otherwise) — so a lying/absent `ufoRoot` legally moves the zone. A scratch root
+otherwise) — so a lying/decoy `ufoRoot` legally moves the zone, while an **absent
+field** refuses `INVALID_SPEC` and an **unreadable path** refuses
+`CONFIG_UNREADABLE`. The `repo` field is not gated the same way: a missing `repo`
+resolves lexically and is accepted when `base` is given; with a defaulted `base`
+it fails closed (`INVALID_SPEC`, "cannot resolve repo HEAD branch"). A scratch root
 must hold a **real copy** of `config/ufo.json`, never a symlink, because
 `fs.writeFileSync`/`Bun.write` follow a symlinked path to its target and would
 clobber the band authority (the F1 case b). The **honest path writes nothing under
@@ -162,8 +169,15 @@ real and observed:
   the pane launched — `exit 2`, empty `--json` stdout, **no fleet.json**, a live
   orphan pane. Scope "refusals cause zero mutation" to *filesystem* mutation and
   to the pre-flight refusals.
-- **Bind mounts** are not symlinks, so neither `lstat` nor `realpathDeepest` sees
-  them: also unclosed and untested.
+- **Bind mounts (open, now observed).** A bind mount is the same inode under a
+  different pathname, so neither `lstat` nor `realpathDeepest` sees it: a mount
+  planted over a derived destination is **not** refused (`exit 0`, `ok:true`) and
+  the write lands inside the mount's target — a scratch reproduction clobbered the
+  band authority through a bind-mounted `sessions`/slot/prompt. It needs mount
+  privilege in the launcher's namespace (root/`CAP_SYS_ADMIN`, or a user namespace
+  with the launcher started inside it); closing it needs mount-namespace awareness
+  (`statx` mount id vs the validated root) or an fd-pinned write, not another
+  `realpath` call.
 
 ### Removal rules
 
@@ -208,8 +222,9 @@ typed refusal (`INVALID_SPEC`, `EXIT 2`, message family) a hostile path produces
 and whether it fires before or after the wall; is a root/destination confined by
 zone or by containment; does the honest path touch `<ufoRoot>`; which residual
 window (swap race, hardlink, bind mount) remains open; and which removal rule
-applies. The full refusal-code set and the launcher's verb/spec surface are
-`fleet-warden`'s; the wave-validator registry gates are `wave-smith`'s.
+applies. The launcher's full verb/spec surface and refusal-code set, and the
+wave-validator's registry gates, are outside this card's domain — this card owns
+only the write-confinement question.
 
 ## The corpus protocol
 
