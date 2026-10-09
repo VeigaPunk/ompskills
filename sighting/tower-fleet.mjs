@@ -903,6 +903,11 @@ function wallRegistry(spec) {
     wall,
     active,
     retired,
+    // A ghost row — live in the manifest, pane dead — is in NONE of the three
+    // arrays (missions[] is pane-filtered, completed[]/stopped[] are
+    // status-filtered). `staleMissionCount` is the only field that names it,
+    // and such a row still holds L1 capacity, so the verbs surface it.
+    staleCount: Number.isSafeInteger(wall.staleMissionCount) ? wall.staleMissionCount : 0,
     fleetRows: active.filter((row) => (row.fleet ?? null) === spec.fleet),
     // Live rows LAST: if a run id ever appears in both views, the live row's
     // paneId/phase must win over a retired projection of the same mission.
@@ -911,7 +916,7 @@ function wallRegistry(spec) {
 }
 
 function verbStatus(spec, authority, options) {
-  const { wall, active: allWallRows, retired: allRetiredRows, fleetRows } = wallRegistry(spec);
+  const { wall, active: allWallRows, retired: allRetiredRows, fleetRows, staleCount } = wallRegistry(spec);
   const state = readFleetState(spec);
   const stateMissions = Array.isArray(state?.missions) ? state.missions : [];
 
@@ -1022,6 +1027,7 @@ function verbStatus(spec, authority, options) {
         inStateNotOnWall,
         foreignFleetRows: foreignRows.map(wallRowId),
         retiredRows: [...retiredById.keys()],
+        staleMissionCount: staleCount,
       },
       missions: rows,
     });
@@ -1042,6 +1048,9 @@ function verbStatus(spec, authority, options) {
     }
     if (foreignRows.length > 0) {
       process.stdout.write(`reconcile: wall row(s) registered under another fleet for run id(s) this fleet tracks: ${foreignRows.map((row) => `${wallRowId(row)} (${row.fleet ?? "none"})`).join(", ")}\n`);
+    }
+    if (staleCount > 0) {
+      process.stdout.write(`reconcile: the wall reports ${staleCount} stale mission(s) with no live pane and no registry row (they still hold L1 capacity) — run \`bash <ufoRoot>/scripts/ufo-sighting reconcile\`\n`);
     }
   }
   return EXIT_OK;
@@ -1072,9 +1081,13 @@ function verbClose(spec, authority, options) {
     const row = registryById.get(mission.id);
     const worktree = path.join(spec.worktreeRoot, mission.id);
     if (row === undefined) {
-      // Nothing on the wall to complete (a mission that never launched, or was
-      // removed). Skipping keeps close idempotent instead of failing the run.
-      warn(`mission ${mission.id} is not on the wall — nothing to complete`);
+      // Nothing the wall's registry reports. A ghost row (manifest-live, pane
+      // dead) lands here too, and it still holds L1 capacity — so name the
+      // wall's own reconcile verb instead of just "nothing to complete".
+      const stale = registry.staleCount > 0
+        ? `; the wall reports ${registry.staleCount} stale mission(s) with no live pane — \`bash <ufoRoot>/scripts/ufo-sighting reconcile\` may be required`
+        : "";
+      warn(`mission ${mission.id} is not in the wall's registry — nothing to complete${stale}`);
       results.push({ id: mission.id, status: "absent", completed: false, paneLive: false, worktree });
       continue;
     }
@@ -1102,7 +1115,7 @@ function verbClose(spec, authority, options) {
       if (row.completed) {
         process.stdout.write(`completed wall mission ${row.id}${row.paneLive ? " (pane left running: --force)" : ""}\n`);
       } else if (row.status === "absent") {
-        process.stdout.write(`skipped ${row.id} — not on the wall\n`);
+        process.stdout.write(`skipped ${row.id} — not in the wall's registry\n`);
       } else {
         process.stdout.write(`FAILED ${row.id} — exit ${row.status}: ${row.failure?.detail ?? ""}\n`);
       }
