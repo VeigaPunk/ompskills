@@ -21,9 +21,15 @@
 | 1 | `sweep-safety` — no repo-wide worktree sweep | **HOLDS** | — |
 | 2 | `removal-discipline` — per-path removal only, never automatic | **HOLDS** | low (guidance) |
 | 3 | `argv-integrity` — argv-array shell-outs, no spec-built shell string | **HOLDS for shell** / **VIOLATED for option-flag injection** | high |
-| 4 | `interactivity` — interactive omp argv, `--cwd` == mission cwd | **HOLDS at runtime** / latent guard holes | medium (latent) |
+| 4 | `interactivity` — interactive omp argv, `--cwd` == mission cwd | **HOLDS at runtime** / latent guard hole | low (was medium; §R2) |
 | 5 | `write-confinement` — writes only under stateDir/worktreeRoot/worktrees | **VIOLATED** (spec-trust dependent; follows symlinks) | high |
 | 6 | `gate-honesty` — `--apply` gate, truthful typed errors/exit codes | **HOLDS** | medium |
+
+Round 2 (16 refutation lanes) tried to falsify each accepted finding with disjoint
+methods and the real binaries; results and corrections are in
+[§ Round 2](#round-2--refutation-pass). No finding was fully refuted; three were
+corrected (M-4.1 Medium→Low; L-2.1 and L-7.3 scope-narrowed), one remediation was
+shown insufficient (H-5.2), and one incident attribution was corrected.
 
 Adversarial confirmation:
 - Mutation test M1 — injecting `run(["omp","worktree","clear"])` into `verbStatus`
@@ -290,10 +296,181 @@ shows is not enforced.
 
 ## Provenance
 
-Accepted evidence comes from the 32 lane reports in
+Accepted evidence comes from the 48 lane reports (32 discovery + 16 refutation) in
 `.tower/fleets/tower1/reports/tf-audit-launcher/`, the independent L1 probe
 (`plan --json` on the real fleet spec; a sandbox `stateDir` confinement probe),
 and mutation tests M1/M2. Every lane verified the canonical launcher sha256 and
 reported zero writes to the real repo or substrate except its own report file.
 No check in this report is claimed unrun; unresolved residuals are marked as
 `[INFERENCE]` in the individual lane reports.
+
+---
+
+## Round 2 — refutation pass
+
+16 lanes, each attempting to falsify one accepted round-1 finding with disjoint
+methods and the **real** binaries (`omp` 18.8.6, `git` 2.55.0) rather than a PATH
+shim. Outcome: **0 findings fully refuted; 5 confirmed and strengthened, 6
+partially refuted (claim corrected), 5 confirmed as-is.** Per-lane reports:
+`SwarmReviewer01`, `SwarmSentinel02`, `SwarmExecutor03`, `SwarmMutationTester04`,
+`SwarmCritic05`, `SwarmReviewer06`, `SwarmReviewer07`, `SwarmScout08`,
+`SwarmConnector09`, `SwarmCritic10-2`, `SwarmSentinel11-2`, `SwarmSentinel12`,
+`SwarmRevenger13`, `SwarmCritic14-2`, `SwarmCritic15`, `SwarmConnector16`.
+
+| Finding | Refutation verdict | Correction applied |
+|---|---|---|
+| H-5.1 roots unconfined | not refuted (88-run matrix, 0 containment rejections) / **impact partially refuted** | see below |
+| H-5.2 symlink writes / leaf overwrite | not refuted — strengthened with real binaries | remediation insufficient |
+| H-3.1 `base` option injection | not refuted (real `omp`, two repos) | wording + exploit class refined |
+| M-6.1 `close --mission ''` | not refuted | trigger scope tightened |
+| M-7.1 `fleet` coercion | partially refuted | B/D refuted, A/C confirmed |
+| M-7.2 scope dot bypass | not refuted | bypass class refined |
+| M-4.1 `--print=` guard hole | partially refuted | **Medium → Low** |
+| L-2.1 unquoted printed command | partially refuted | claim corrected |
+| L-7.3 placeholder prototype bypass | partially refuted | scope narrowed |
+| sweep-safety HOLD | supporting bullets partially refuted | wording corrected |
+| removal-discipline HOLD | not refuted | low exception added |
+| gate-honesty HOLD | not refuted (FIFO proof) | sub-claim corrected |
+
+**H-5.1 — confirmed unenforced; impact scoped.** `Reviewer01` re-audited the whole
+pipeline and ran 88 `launch --apply` combinations (22 values × 2 roots, real `omp`)
+with **zero containment rejections**: absolute escapes, `..` chains, `<repo>/.git`,
+`<ufoRoot>`, and `<ufoRoot>/config` were all accepted and wrote/registered where
+the spec said. Correction round 1 missed: **`git`/`omp` do *not* refuse
+`.git`-internal or `ufoRoot`-internal worktrees** on omp 18.8.6, so the
+reject-nesting check in the remediation is load-bearing, not belt-and-braces.
+`Sentinel02` partially refuted the *impact*: a hostile spec is already fully
+privileged (it chooses `ufoRoot`, and the launcher runs `bash <ufoRoot>/scripts/ufo-sighting`
+at `:371`), so containment guards *benign/buggy* specs, not an adversary; the
+reachable-by-name overwrite set is tiny (`<stateDir>/fleet.json`,
+`<stateDir>/<id>.prompt.md`, reused-dir `.omp/skills/<name>/**`), and the real
+`ufoRoot` today holds no `fleet.json`/`*.prompt.md` to replace — so H-5.1's real
+impact is **creation/pollution, not arbitrary overwrite** (that class is H-5.2).
+It also showed a read-only root fails closed with a **generic `UNEXPECTED_ERROR`**
+(`:739`), not a typed code, and that a mid-loop abort leaves the earlier
+worktree/wall-open side effects (`WORKTREE_ADD_FAILED` after `mkdir`).
+
+**H-5.2 — confirmed, remediation corrected.** `Executor03` re-ran the symlink
+scenarios with the real `omp` ELF (no shim): symlinked `worktreeRoot` — real `omp
+worktree add` accepted and checked out through the link; symlinked state leaves —
+`writeFileSync` truncated and replaced the outside victims (sha changed);
+`existsSync` reuse (`:507`) "reused" a symlinked slot and skipped `omp` entirely.
+`MutationTester04` then falsified the *proposed fix*: an `lstat` leaf refusal kills
+the literal leaf scenario but is bypassed by (a) a symlinked `stateDir`,
+(b) a symlinked intermediate component, (c) a **dangling** leaf symlink (target
+created), and (d) the `copySkill` write site. A stronger design — `realpath`
+containment of `stateDir` + `openSync(… O_NOFOLLOW)` — refused all five launcher
+vectors with six victims byte-identical and the happy path intact (tested mutant
+`tower-fleet-hardened.mjs`, sha256 `2df6cedd…`), though it still does not cover
+`copySkill`. **Corrections:** `cpSync` does *not* follow a symlinked leaf target
+(`ERR_FS_CP_DIR_TO_NON_DIR`), so round 1's "every write site follows symlinks" was
+over-broad; and the escalation is conditional on a shared/outside `stateDir`.
+
+**H-3.1 — confirmed, refined.** `Reviewer06` and `Critic05` reproduced it against
+the real `omp`: the `base` slot is an **option-scanned slot** (omp parses flags
+interspersed), so `--cwd=<otherrepo>` silently registers the worktree *and* branch
+in another repo while the launcher prints `ok:true` and the JSON reports the
+lexical (wrong) path; `--branch=<ref>` produces false branch provenance; `-q`,
+`-d`, `--detach`, `--` silently swap the base. Unknown flags fail loudly
+(`WORKTREE_ADD_FAILED`), so the exploit class is **known flags only**. Inserting
+`--` before the positionals was verified to fail closed (exit 2, zero worktree
+writes) with the happy path intact — though `--` alone is not zero-write, because
+the wall `open` and the `<stateDir>` creation happen before the worktree loop.
+
+**M-6.1 — confirmed, trigger tightened.** `Reviewer07` reproduced 3 `complete`
+calls for `close --mission '' --apply` and for `--mission "$UNSET" --apply`;
+`--mission '  '` and `--mission nosuch` correctly give `UNKNOWN_MISSION` (exit 2),
+`--mission=` is a usage error (64), and `--mission --apply` is caught by the apply
+gate. Only the space-separated empty token (or an empty variable) triggers
+close-all. Severity Medium holds (completion is irreversible wall-side).
+
+**M-7.1 — partially refuted.** `Critic10-2` refuted the child-token half (spawnSync
+`ToString`s argv, and the wall's own gate `ToString`s the same way, so the `--fleet`
+token is identical to the string control) and the close-behaviour half (`verbClose`
+is fleet-blind; identical `complete --mission` sequences for `"ab"`, `1`, `["ab"]`).
+Confirmed: the JSON `fleet` type drift (cosmetic except to strict consumers) and
+the `status` row matching via strict `===` (`:613`), which reports **every** live
+mission as `not-on-wall` for a non-string `fleet`. Impact therefore lowers from
+"behavioural" to "cosmetic + status misreport".
+
+**M-7.2 — confirmed, refined.** `Connector09` re-ran 21 cases end-to-end
+(including `launch --apply` with real `omp`: both worktrees live, both prompts on
+disk with contradictory edit-bounds) and pinned the exact bypass class: *a `.`
+segment surviving at a position before the shorter scope's segment count, or a
+bare `.`*; it added new evasion pairs (`a/.` vs `a/b`, `src/././deep` vs
+`src/deep`, `.` vs `docs/readme.md`) and showed `./` → `INVALID_SPEC` while `.` →
+accept, for the same referent.
+
+**M-4.1 — partially refuted, Medium → Low.** `Sentinel12` showed no spec-controlled
+value can place a `--print=`/`-p=` token in the omp argv (the argv template is
+fixed; every spec value lands in an absolute-path slot, an `@`-prefixed token, or a
+pattern-constrained token), and the **real wall preflight** rejects those forms
+(`HEADLESS_MISSION_REJECTED`) before any pane exists. The gap's only failure mode is
+a late per-mission `LAUNCH_FAILED` after the worktree/prompt writes — a
+defense-in-depth asymmetry, not a live hole.
+
+**L-2.1 — partially refuted, claim corrected.** `Scout08` proved the `:664` string
+is never re-parsed or executed by anything in the launcher, its test, or the repo —
+so it is **not** a launcher argv-integrity defect. It remains a real *operator*
+guidance bug: a repo/worktree path with a space or metachar breaks on paste, and a
+pasted `$(…)` executes (demonstrated). Severity Low.
+
+**L-7.3 — partially refuted, scope narrowed.** `Sentinel11-2` showed the
+prototype-chain bypass is **template-side only** (a spec `title`/`goal` carrying
+`{{constructor}}` *is* refused with `RENDER_UNRESOLVED`, exit 2, zero mutation), that
+nothing beyond prompt prose is affected (no code execution, no argv, no
+filesystem, no JSON shape), and that only a template editor — already able to write
+any prompt prose — can pull it. `{{__proto__}}` never reads the prototype (the
+regex excludes `_`). Residual defect: lost diagnostic/gate honesty. Severity Low.
+
+**sweep-safety — invariant HOLDS; two supporting bullets corrected.**
+`Connector16` read the wall's `complete`/`status` delete sites: `verbClose` delegates
+an automatic recursive delete into the wall (`applyMissionRetention` →
+`rmSync(target,{recursive:true,force:true})`, `ufo-sighting.mjs:3294`) and
+`verbStatus` triggers the wall's advisory-cache prune/lock sweeps — so
+"no delete primitive is imported, so in-process removal is structurally impossible"
+is true only *inside the launcher process*. The deletes are scoped to mission
+scratch (`*.tmp`/`*.bak`/`core.*`/old snapshots, name- and lstat-guarded) and the
+wall's cache/locks, never a worktree, branch, or fleet tree — the invariant stands
+with better evidence. `Critic14-2` confirmed removal-discipline holds across the
+full verb matrix (including `close ''`/whitespace/unknown `--mission`, partial
+launches, re-runs) and added one **low exception**: a *dangling symlink* at the
+worktree leaf is unlinked by the spawned real `omp worktree add` (reached because
+`existsSync` follows symlinks) — an operator-planted symlink node, not a worktree
+or branch.
+
+**gate-honesty — HOLD confirmed decisively.** `Critic15` ran 21 parse/refusal
+probes plus a **FIFO proof**: `launch --spec <blocking FIFO>` returns exit 2
+immediately (the gate refuses before opening the spec) while the un-gated `status`
+control blocks (`timeout 124`) — so no write or read precedes the `--apply` gate.
+It corrected one sub-claim: `status` is un-gated and provokes the **wall's** own
+`<ufoRoot>/.ufo/**` cache writes (delegated; already noted in §5) — the launcher
+gate itself is sound and should not be "hardened".
+
+**Incident attribution (corrected).** `Revenger13` forensically showed the substrate
+`config/ufo.json` clobber was **not** the launcher: `config/ufo.json` appears in
+`tower-fleet.mjs` only as a read (`:107`/`:110`); the file's inode/birth/mtime and a
+sibling `.bak` one millisecond older match a
+backup-then-atomic-replace (`copyFileSync` + tmp `writeFileSync` + `renameSync`) —
+the operator session's `host/apply.mjs` merge signature — not the launcher's plain
+`writeFileSync` (which preserves inode/birth, proven). The three differing integer
+lines (`minLanes`, `waveMinLanes`, `waveMaxLanes`) reconcile byte-for-byte to the
+committed config blob, which the launcher never emits. `NODE_COMPILE_CACHE` churn is
+exonerated (extensionless V8 blobs, no `*.json`). Attribution: a **lane's own
+`Bun.write` through a symlink it created** (the class this audit flags), with the
+band edits being the operator's `--apply` merges.
+
+### Revised remediation order (post-refutation)
+
+1. **H-5.2 (do this first):** `realpath` containment of both roots (nearest existing
+   ancestor under `realpathSync(repo)`) **plus** `openSync(… O_NOFOLLOW)` at the
+   write sites — the leaf-only `lstat` fix is provably insufficient (`copySkill`
+   still needs coverage). H-5.1 is closed by the same containment check.
+2. **H-3.1:** validate `base` (type + ref pattern, mirroring the `maxTime` guard at
+   `:253`) and insert `--` before the `omp worktree add` positionals.
+3. **M-6.1:** `options.mission !== null` at `:644` (matching `:700`), or reject an
+   empty value at the usage layer.
+4. **M-7.2 / M-7.1:** canonicalize dot segments in `normalizeScopePath`; add a
+   `typeof fleet === "string"` gate at `:189`.
+5. **Low:** quote `:664` with `quoteArg`; widen the placeholder regex + use
+   `Object.hasOwn` (`:294`); type the prompt-template `ENOENT`.
