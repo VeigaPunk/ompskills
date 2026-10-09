@@ -1200,10 +1200,10 @@ function verbClose(spec, authority, options) {
       // aborting with nothing but a typed error.
       failures.push({ id: mission.id, detail });
       warn(`wall complete failed for ${mission.id} (exit ${completed.status}): ${detail}`);
-      results.push({ id: mission.id, status: completed.status, completed: false, paneLive, phase: wallRowPhase(row), failure: { code: "COMPLETE_FAILED", detail }, worktree });
+      results.push({ id: mission.id, status: completed.status, completed: false, paneLive, phase: wallRowDisposition(row), failure: { code: "COMPLETE_FAILED", detail }, worktree });
       continue;
     }
-    results.push({ id: mission.id, status: completed.status, completed: true, paneLive, phase: wallRowPhase(row), worktree });
+    results.push({ id: mission.id, status: completed.status, completed: true, paneLive, phase: wallRowDisposition(row), worktree });
   }
   if (options.json) {
     emitJson({ ok: failures.length === 0, verb: "close", fleet: spec.fleet, forced: Boolean(options.force), failures, missions: results, worktreeRemoval: "manual-only" });

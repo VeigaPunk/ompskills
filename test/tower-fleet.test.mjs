@@ -1576,7 +1576,7 @@ say("isolation — shell-outs are spec-derived; the stub wall is the only spawn"
     '  for a in "$@"; do echo "ARG=$a"; done',
     '  echo "END"',
     `} >> '${argvLog}'`,
-    "printf '{\"ok\":true,\"status\":\"present\",\"missions\":[]}'",
+    "printf '%s' '{\"ok\":true,\"status\":\"present\",\"missions\":[],\"completed\":[{\"runId\":\"tf-alpha\",\"missionId\":\"tf-alpha\",\"paneId\":\"%42\"}],\"completedMissionCount\":1,\"stopped\":[],\"stoppedMissionCount\":0}'",
   ].join("\n"));
   const wallBlocks = () => (existsSync(argvLog) ? readFileSync(argvLog, "utf8").split("END\n").filter((block) => block.trim() !== "") : []);
   const tokensOf = (block) => block.split("\n").filter((line) => line.startsWith("ARG=")).map((line) => line.slice(4));
@@ -1607,9 +1607,17 @@ say("isolation — shell-outs are spec-derived; the stub wall is the only spawn"
   const close = launcher(["close", "--spec", isoSpec, "--apply", "--force", "--json"]);
   check("isolation: close --apply exit 0", close.status === 0, `got ${close.status}; stderr ${close.stderr.slice(0, 200)}`);
   const allBlocks = wallBlocks();
-  check("isolation: close reads wall registry and skips missions absent from it",
-    allBlocks.length === 2 && allBlocks.every((block) => tokensOf(block).join(" ") === "status --lite"),
+  check("isolation: close reads registry, completes its retired row, skips absent rows",
+    allBlocks.length === 3
+      && tokensOf(allBlocks[1]).join(" ") === "status --lite"
+      && tokensOf(allBlocks[2]).slice(0, 3).join(" ") === "complete --mission tf-alpha",
     `blocks=${allBlocks.length}; argv=${allBlocks.map((block) => tokensOf(block).join(" ")).join(" | ")}`);
+  if (close.status === 0) {
+    const closeJson = JSON.parse(close.stdout);
+    const retired = closeJson.missions.find((row) => row.id === "tf-alpha");
+    check("isolation: retired close phase comes from completed disposition",
+      retired?.phase === "completed" && retired.paneLive === false, JSON.stringify(retired));
+  }
   check("isolation: every spawn was the temp stub", allBlocks.every((block) => block.startsWith(`SCRIPT=${isoCli}`)),
     allBlocks.map((block) => block.split("\n")[0]).join("; "));
   const logText = existsSync(argvLog) ? readFileSync(argvLog, "utf8") : "";

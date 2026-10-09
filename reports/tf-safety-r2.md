@@ -184,8 +184,11 @@ Regression evidence: `test/tower-fleet.test.mjs` has five fixture-only symlink
 probes (prompt, sessions parent, fleet state, worktree slot, and skill target
 parent); all refuse as `INVALID_SPEC` before the wall stub is called, and the
 fixture `config/ufo.json` remains byte-identical. The scope gate also rejects
-`.` and embedded `.` segments, closing F2's repo-root-prefix bypass. The
-launcher suite and live wave suite pass.
+`.` and embedded `.` segments, closing F2's repo-root-prefix bypass. F3's close
+result now reports the registry's retired disposition (`completed`/`suspended`)
+instead of deriving `working` from a pane-liveness fallback; the fixture close
+test covers a retired completed row with no phase. The launcher suite and live
+wave suite pass.
 
 Residual limitation: a same-user process can race a symlink replacement between
 the final path check and the filesystem operation; bind-mount and adversarial
