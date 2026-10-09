@@ -32,9 +32,11 @@
  *     failure, the panes already up keep running, and fleet.json is written
  *     either way (`ok:false`, exit 2, code LAUNCH_PARTIAL);
  *   - relaunch is idempotent: an existing worktree, an existing prompt (byte
- *     identical -> left untouched), and an existing wall row (the run id
- *     stays reserved while the row exists, so a second `launch` would be a
- *     RUN_ID_CONFLICT) are all adopted instead of recreated;
+ *     identical -> left untouched), and an existing wall row are all adopted
+ *     instead of recreated; the row is looked up in the wall's whole registry
+ *     (live rows plus its retired `completed[]`/`stopped[]` history), because
+ *     a run id stays reserved while any registered row holds it — a retired
+ *     row is recorded as RUN_ID_RESERVED, never re-launched;
  *   - `status` reconciles the wall against `<stateDir>/fleet.json` in both
  *     directions and writes nothing;
  *   - `close` refuses (PANE_LIVE) when a target's pane is still live on the
@@ -85,8 +87,10 @@ const MAXTIME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:+-]*$/;
 const VERBS = new Set(["plan", "launch", "status", "close"]);
 
 // The wall's live phases (`statusPhase`: starting -> queued, running ->
-// working). Every other phase (suspended/completed/failed/unknown) means no
-// pane is running, so the mission is safe to complete.
+// working). `phase` is the fallback liveness answer for a row that carries no
+// numeric `levels.l1`; a manifest-live row can still show a non-live phase when
+// the dispatcher's observation sidecar disagrees, so `levels.l1` — which is
+// the wall's own `isLiveStatus` — always wins when it is present.
 const LIVE_PHASES = new Set(["queued", "working"]);
 
 class TypedError extends Error {
@@ -410,10 +414,6 @@ function readWall(spec) {
   return parseJsonOutput(result.stdout, "wall status --lite");
 }
 
-function wallRowsForFleet(spec, wall) {
-  return (wall.missions ?? []).filter((mission) => (mission.fleet ?? null) === spec.fleet);
-}
-
 function wallRowId(row) {
   return row?.runId ?? row?.missionId ?? null;
 }
@@ -555,12 +555,11 @@ function verbLaunch(spec, authority, options) {
   if (opened.status !== 0) {
     typed("WALL_OPEN_FAILED", `bash ${wallCliPath} open exited ${opened.status}: ${(opened.stderr || opened.stdout).slice(0, 400)}`);
   }
-  // Adoption is keyed by run id across the WHOLE manifest, not this fleet's
-  // rows: the wall reserves a run id globally (`ensureUniqueMission` scans
-  // every fleet), so a row that holds our id blocks a fresh launch regardless
-  // of the fleet it was registered under.
-  const wall = readWall(spec);
-  const existingByRunId = new Map((wall.missions ?? []).map((wallRow) => [wallRowId(wallRow), wallRow]));
+  // Adoption is keyed by run id across the WHOLE registry — the live view plus
+  // retired rows, any fleet: the wall reserves a run id globally
+  // (`ensureUniqueMission` scans every registered row), so a row that holds our
+  // id blocks a fresh launch whether it is live or long retired.
+  const { byId: wallById } = wallRegistry(spec);
   const previousById = new Map((readFleetState(spec)?.missions ?? []).map((mission) => [mission.id, mission]));
   mkdirSync(spec.stateDir, { recursive: true });
 
@@ -588,11 +587,13 @@ function verbLaunch(spec, authority, options) {
     //    a run id globally, and a live pane must be recorded even when the
     //    local worktree cannot be recreated (a failed `omp worktree add` used
     //    to drop the pane reference on the floor).
-    const existing = existingByRunId.get(row.id);
+    const existing = wallById.get(row.id);
     if (existing !== undefined) {
+      const live = wallRowLive(existing);
       record.paneId = existing.paneId ?? null;
       record.panePhase = wallRowPhase(existing);
       record.paneReused = true;
+      record.retired = !live;
       // Keep the prior run's raw pane receipt: adoption re-reads the wall, and
       // overwriting the record with null would lose what launch actually saw.
       const prior = previousById.get(row.id);
@@ -600,9 +601,19 @@ function verbLaunch(spec, authority, options) {
         record.launchResult = prior.launchResult;
         record.launchResultFrom = "prior-state";
       }
-      warn(`mission ${row.id} is already on the wall (${record.panePhase}) — reusing pane ${record.paneId ?? "?"}, not relaunching`);
-      if ((existing.fleet ?? null) !== spec.fleet) {
-        warn(`mission ${row.id} is registered under fleet ${existing.fleet ?? "(none)"}, not ${spec.fleet} — reusing the wall row as-is`);
+      if (live) {
+        warn(`mission ${row.id} is already on the wall (${record.panePhase}) — reusing pane ${record.paneId ?? "?"}, not relaunching`);
+        if ((existing.fleet ?? null) !== spec.fleet) {
+          warn(`mission ${row.id} is registered under fleet ${existing.fleet ?? "(none)"}, not ${spec.fleet} — reusing the wall row as-is`);
+        }
+      } else {
+        // The run id is still reserved by a retired row, so no fresh pane can be
+        // launched under it. Report that instead of letting the wall answer a
+        // bare RUN_ID_CONFLICT, and keep the retired row's pane reference.
+        const detail = `run id ${row.id} is still registered by a ${record.panePhase} wall row — a fresh pane cannot launch under a reserved run id; retire the row (\`bash <ufoRoot>/scripts/ufo-sighting remove --mission ${existing.missionId ?? row.id}\`) or use a new mission id`;
+        record.failure = { code: "RUN_ID_RESERVED", detail };
+        failures.push({ id: row.id, detail });
+        warn(`mission ${row.id} is ${record.panePhase} on the wall and its run id is still reserved — recording RUN_ID_RESERVED, not relaunching`);
       }
     }
 
@@ -743,10 +754,30 @@ function roundReceipts(stateDir, missionId) {
     .map((name) => path.join(roundsDir, name));
 }
 
-function verbStatus(spec, authority, options) {
+/** Every row the wall still registers for a run id: the live view plus the
+ * retired history the wall keeps in its own `completed[]`/`stopped[]` arrays.
+ * A run id is reserved while ANY of those rows exists (`ensureUniqueMission`
+ * scans the whole manifest), so adoption, launch reuse, status reconciliation,
+ * and close resolution all read this registry — never the live view alone, or
+ * a retired mission would look absent while its id still blocks a fresh pane. */
+function wallRegistry(spec) {
   const wall = readWall(spec);
-  const allWallRows = Array.isArray(wall.missions) ? wall.missions : [];
-  const fleetRows = wallRowsForFleet(spec, wall);
+  const active = Array.isArray(wall.missions) ? wall.missions : [];
+  const retired = [
+    ...(Array.isArray(wall.completed) ? wall.completed : []),
+    ...(Array.isArray(wall.stopped) ? wall.stopped : []),
+  ];
+  return {
+    wall,
+    active,
+    retired,
+    fleetRows: active.filter((row) => (row.fleet ?? null) === spec.fleet),
+    byId: new Map([...active, ...retired].map((row) => [wallRowId(row), row])),
+  };
+}
+
+function verbStatus(spec, authority, options) {
+  const { wall, active: allWallRows, retired: allRetiredRows, fleetRows } = wallRegistry(spec);
   const state = readFleetState(spec);
   const stateMissions = Array.isArray(state?.missions) ? state.missions : [];
 
@@ -769,9 +800,15 @@ function verbStatus(spec, authority, options) {
     seen.add(id);
     relevant.push(row);
   }
-  const wallIds = new Set(relevant.map(wallRowId));
-  const onWallNotInState = relevant.map(wallRowId).filter((id) => !stateIds.has(id));
-  const inStateNotOnWall = stateMissions.map((mission) => mission.id).filter((id) => !wallIds.has(id));
+  // The wall keeps no pane for a retired mission, so it drops out of
+  // `missions[]` and moves to `completed[]`/`stopped[]` with the authoritative
+  // terminal state. Those rows are tracked history, not missions missing from
+  // the wall — fleet.json still records them.
+  const retiredRows = allRetiredRows.filter((row) => ownIds.has(wallRowId(row)));
+  const retiredById = new Map(retiredRows.map((row) => [wallRowId(row), row]));
+  const trackedIds = new Set([...relevant.map(wallRowId), ...retiredById.keys()]);
+  const onWallNotInState = [...new Set([...relevant.map(wallRowId), ...retiredById.keys()])].filter((id) => !stateIds.has(id));
+  const inStateNotOnWall = stateMissions.map((mission) => mission.id).filter((id) => !trackedIds.has(id));
   const foreignRows = relevant.filter((row) => (row.fleet ?? null) !== spec.fleet);
 
   const rows = relevant.map((row) => {
@@ -802,6 +839,25 @@ function verbStatus(spec, authority, options) {
   for (const mission of notOnWall) {
     if (known.has(mission.id)) continue;
     known.add(mission.id);
+    const retiredRow = retiredById.get(mission.id);
+    if (retiredRow !== undefined) {
+      rows.push({
+        id: mission.id,
+        missionId: retiredRow.missionId ?? null,
+        title: retiredRow.title ?? mission.title,
+        source: "wall-retired",
+        status: wallRowPhase(retiredRow),
+        live: false,
+        retired: true,
+        retiredAt: retiredRow.completedAt ?? retiredRow.stoppedAt ?? null,
+        paneId: retiredRow.paneId ?? null,
+        inFleetState: stateIds.has(mission.id),
+        inSpec: specIds.has(mission.id),
+        failure: mission.failure,
+        rounds: roundReceipts(spec.stateDir, mission.id).map((file) => path.basename(file)),
+      });
+      continue;
+    }
     rows.push({
       id: mission.id,
       missionId: null,
@@ -831,6 +887,7 @@ function verbStatus(spec, authority, options) {
         onWallNotInState,
         inStateNotOnWall,
         foreignFleetRows: foreignRows.map(wallRowId),
+        retiredRows: [...retiredById.keys()],
       },
       missions: rows,
     });
@@ -865,7 +922,7 @@ function verbClose(spec, authority, options) {
   // The wall is the only authority on whether a pane is live. Refuse the whole
   // close while any target is live: completing one mission of a fleet while a
   // sibling still runs tears the fleet apart for a mission that is not done.
-  const wallById = new Map(wallRowsForFleet(spec, readWall(spec)).map((row) => [wallRowId(row), row]));
+  const wallById = new Map([...wallRegistry(spec).byId]);
   const live = targets.filter((mission) => wallRowLive(wallById.get(mission.id)));
   if (live.length > 0 && !options.force) {
     typed("PANE_LIVE", `mission(s) ${live.map((mission) => mission.id).join(", ")} still live on the wall; refusing to complete a live mission (pass --force to complete anyway — their panes keep running)`);
