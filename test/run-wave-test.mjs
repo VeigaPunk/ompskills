@@ -468,11 +468,17 @@ function resolveBand(delta) {
   ok("band.live", `checkout band as it stands: waveMinLanes ${liveSwarm.waveMinLanes}, waveMaxLanes ${liveSwarm.waveMaxLanes}, maxLanes ${liveSwarm.maxLanes}, minLanes ${liveSwarm.minLanes}`);
 
   if (opts.band === "live") {
-    // The real file is the authority. It must already carry the post-apply
-    // floor, or every negative assertion below would be measuring the old band.
-    if (liveSwarm.waveMinLanes !== delta.swarm.waveMinLanes) {
-      die(1, `apply_not_landed: ${LIVE_CONFIG} still declares swarm.waveMinLanes ${liveSwarm.waveMinLanes}; `
-        + `--band live needs the merged delta (${delta.swarm.waveMinLanes}). `
+    // The real file is the authority, and the WHOLE band must already match the
+    // merged delta — a partial apply that landed the floor but left the wave
+    // ceiling or the cap pre-apply would otherwise pass this gate as the live
+    // authority, and only the downstream matrix would notice, only for the cells
+    // it happens to cover.
+    const drifted = ["waveMinLanes", "waveMaxLanes", "maxLanes"]
+      .filter((key) => liveSwarm[key] !== delta.swarm[key])
+      .map((key) => `swarm.${key} ${liveSwarm[key]} (delta ${delta.swarm[key]})`);
+    if (drifted.length > 0) {
+      die(1, `apply_not_landed: ${LIVE_CONFIG} still declares ${drifted.join(", ")}; `
+        + `--band live needs the merged delta (${["waveMinLanes", "waveMaxLanes", "maxLanes"].map((key) => `${key} ${delta.swarm[key]}`).join(", ")}). `
         + `Run \`node host/apply.mjs --apply\` first (the tower sequences this), or use --band fixture `
         + `to validate against the synthesized post-apply band.`);
     }
@@ -708,12 +714,14 @@ function negatives(band, admitted) {
   check("negative.bandShape", floor >= 1 && floor < ceiling && ceiling <= cap && cap <= HARD_CEILING,
     `the band resolved from the ${band.mode} authority is coherent: floor ${floor} < wave ceiling ${ceiling} <= cap ${cap} <= hard ceiling ${HARD_CEILING}`);
 
-  // The file's own directive constants must equal the band authority it was
-  // handed: FLOOR_LANES names the directive's floor and HARD_CEILING its
-  // per-round cap, so a tightened authority that left them behind would renumber
-  // what "the admitted wave" means without any other check noticing.
+  // The file's own directive constants must agree with the band authority it was
+  // handed. The cap half is the load-bearing one (a delta cap tightened to 99
+  // flips this check alone); the floor half is backstopped upstream by the apply
+  // dry run's own hardcoded 16-lane probe, which refuses any delta floor other
+  // than the directive's before section 6 is reached — a floor drift is caught,
+  // just earlier and by a different gate.
   check("negative.authorityConstants", FLOOR_LANES === floor && HARD_CEILING === cap,
-    `the directive constants agree with the ${band.mode} authority: FLOOR_LANES ${FLOOR_LANES} == floor ${floor}, HARD_CEILING ${HARD_CEILING} == cap ${cap}`);
+    `the directive constants agree with the ${band.mode} authority: FLOOR_LANES ${FLOOR_LANES} == floor ${floor}, HARD_CEILING ${HARD_CEILING} == cap ${cap} (the cap half is the one no earlier gate covers)`);
 
   // 6a: the spawn-wave size matrix. Every cell asserts exactly what the band's
   // own arithmetic predicts, so floor, wave ceiling and cap are all pinned by
@@ -766,10 +774,10 @@ function negatives(band, admitted) {
   // cap stays at the policy's while the declaration is recorded as unapplied.
   const widenPath = specFile("spec-cap-widen.json", bandSpec(ceiling, "sighting-wave-cap-widen", cap + 1));
   const widen = planCase("cap-widen.json", widenPath, band);
-  admission("negative.cap.tightenOnly", widen, { spawn: ceiling, resume: 0, total: ceiling },
-    `a declared cap of ${cap + 1} cannot widen the ${cap}-lane policy cap`);
-  check("negative.cap.tightenEcho", widen.json?.policy?.maxLanes === cap && widen.json?.policy?.declaredMaxLanes === cap + 1,
-    `policy.maxLanes ${widen.json?.policy?.maxLanes} stays at the policy cap while declaredMaxLanes ${widen.json?.policy?.declaredMaxLanes} records the unapplied declaration`);
+  const widenCounts = widen.json?.counts ?? null;
+  check("negative.cap.tightenOnly", widen.status === 0 && widenCounts?.spawn === ceiling && widenCounts?.total === ceiling
+    && widen.json?.policy?.maxLanes === cap && widen.json?.policy?.declaredMaxLanes === cap + 1,
+    `a declared cap of ${cap + 1} cannot widen the ${cap}-lane policy cap: exit ${widen.status}, counts ${JSON.stringify(widenCounts)}, policy.maxLanes ${widen.json?.policy?.maxLanes}, declaredMaxLanes ${widen.json?.policy?.declaredMaxLanes}`);
 
   // 6d — the resume exemption, probed against the band it is exempt from. Every
   // spawn row of the admitted wave first receives a SYNTHETIC handle (a live run
@@ -888,6 +896,15 @@ function negatives(band, admitted) {
   refusal("negative.resume.specCap", planCase("resume-cap.json", capPath, band), "too_many_lanes",
     "a per-spec cap of 1 refuses 2 resume lanes — the cap is not part of the band exemption");
 
+  // The one lane count where the clamp itself decides admission: a resume-only
+  // wave one lane past the cap that declares its own cap high enough to admit
+  // itself. The wave ceiling never applies to a resume-only wave, so the clamp
+  // is the only guard left — a planner that widened on a declaration would admit
+  // this wave, and nothing else in the suite would notice.
+  const widenResumePath = specFile("spec-resume-widen.json", resumeOnlySpec(cap + 1, `${WAVE_NAME}-resume-widen`, cap + 1));
+  refusal("negative.resume.widenRefused", planCase("resume-widen.json", widenResumePath, band), "too_many_lanes",
+    `a resume-only wave of ${cap + 1} lanes declaring its own cap of ${cap + 1} is still refused by the clamped ${cap}-lane policy cap`);
+
   // 6e: the rest of the typed refusal vocabulary the smoke procedure documents.
   // Each case is a spec the planner must refuse with an exact code — a refusal
   // is a reason to fix the spec, never a reason to bypass validation.
@@ -968,8 +985,11 @@ function negatives(band, admitted) {
   // just filled it with synthetic handles above, so its rows must now carry them
   // (the `run.registryMembers` claim below is the null-handle half of this).
   const filled = parseJson(readFileSync(admitted.registryAbs, "utf8"), "negative.registryFilled");
-  check("negative.registryFilled", Object.values(filled?.members ?? {}).every((row) => typeof row.agentId === "string"),
-    `record wrote handles into all ${Object.keys(filled?.members ?? {}).length} rows — the registry is the resume authority a later wave names`);
+  const filledRows = Object.entries(filled?.members ?? {});
+  const assigned = new Map(synthetic);
+  check("negative.registryFilled", recorded.status === 0 && filledRows.length === synthetic.length
+    && filledRows.every(([name, row]) => row.agentId === assigned.get(name)),
+    `record exited ${recorded.status} and wrote the handle it was handed into each of the ${filledRows.length} rows (want ${synthetic.length}) — the registry is the resume authority a later wave names`);
 
   // 6f: route-family concentration is asserted in routeFamilies(), which needs
   // the async module boundary — see main().
