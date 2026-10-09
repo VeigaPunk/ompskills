@@ -34,3 +34,5 @@ Read this index first, then the entries relevant to the assignment.
 | 2026-10-09-receipt-schema-digest.md | receipt-digest doctrine: Rust recomputes; JS never admits | 2026-10-09 |
 | 2026-10-09-verify-gitignore-gate.md | re-derivation: `test/evidence/` has no in-repo machine gate (4 named cmds + rc/output) | 2026-10-09 |
 | 2026-10-09-honesty-claims-audit.md | adversarial audit of the shokunin fleet's own receipts (lane counts backed; second-order numbers drifted) | 2026-10-09 |
+| 2026-10-09-r2-verification-errata.md | round-2 errata: 23 standing contradictions + 2 rejected verification findings; card amended | 2026-10-09 |
+| 2026-10-09-verify-amended-card.md | re-verification: card path inventory present/tracked; `.gitignore` bullet's two `git grep` rc/output match wording | 2026-10-09 |

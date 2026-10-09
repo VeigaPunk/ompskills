@@ -20,10 +20,15 @@ Measure every one; never restate a number from memory.
 
 ### The repo (`/home/vgpnk/Projects/ompskills`; or the worktree you were started in)
 
+Paths under `.tower/` below are **state-directory artifacts** — evidence to read,
+never repo sources and never commits; the repo paths are the tracked ones.
+
 - `test/evidence/.gitignore` — **run output, not source**: `*` plus
   `!.gitignore` keeps the directory and ignores everything in it. The only
   tracked member is the ignore file; the rule is git-native, with **no in-repo
-  gate** (`git grep check-ignore` → nothing). One directory per run,
+  gate** — the scoped search `git grep -n -i gitignore -- '*.mjs' '*.js' '*.json'
+  '*.yml'` returns nothing (a bare `git grep check-ignore` matches prose, including
+  this card, once the corpus is tracked). One directory per run,
   `wave-<stamp>/`, `stamp = YYYYMMDDThhmmssZ`.
 - `test/run-wave-test.mjs` — the automated dry half. Its `manifest.json`
   (schema `ufo-sighting-wave-smoke-manifest-v1`) pairs each verdict
@@ -101,10 +106,12 @@ Measure every one; never restate a number from memory.
   commit revision, never a name; a pin drift is recorded, not hidden; *“this
   tracked contract is not a fresh native verdict”*; *“source/tag provenance
   only, not a fresh runtime verdict”*.
-- `docs/REPO-LAYOUT.md`, `docs/BLOCKED.md`, `docs/KNOWN-GAPS.md`,
-  `docs/{artifacts,reports,research}/README.md` — the ephemeral-vs-published
-  distinction (`.ufo/` at any depth is gitignored and pruned), the blocked/gap
-  record shape, and the sibling historical-tree contracts.
+- `docs/REPO-LAYOUT.md`, `docs/BLOCKED.md`, `docs/KNOWN-GAPS.md`, and the sibling
+  historical-tree READMEs — `docs/artifacts/README.md`, `reports/README.md`,
+  `research/README.md` (only the first is under `docs/`) — the
+  ephemeral-vs-published distinction (`.ufo/` at any depth is gitignored and
+  pruned), the blocked/gap record shape, and the sibling historical-tree
+  contracts.
 - `scripts/ufo-swarm-wave.mjs`, `scripts/ufo-swarm-collect.mjs` — the typed
   refusal envelope (`{schema, code, message}`, exit 1; usage 64) and the **one**
   place a coordination honesty rule is machine-checked: the collector’s
