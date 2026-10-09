@@ -924,6 +924,10 @@ function wallRegistry(spec) {
     // status-filtered). `staleMissionCount` is the only field that names it,
     // and such a row still holds L1 capacity, so the verbs surface it.
     staleCount: Number.isSafeInteger(wall.staleMissionCount) ? wall.staleMissionCount : 0,
+    // The wall's own word for itself: "attached" when it is up, "absent" when
+    // there is no wall session (getStatus returns that at exit 0 with empty
+    // arrays), so a mutation verb can refuse instead of silently no-oping.
+    wallStatus: typeof wall.status === "string" ? wall.status : null,
     fleetRows: active.filter((row) => (row.fleet ?? null) === spec.fleet),
     // Live rows LAST: if a run id ever appears in both views, the live row's
     // paneId/phase must win over a retired projection of the same mission.
@@ -932,7 +936,7 @@ function wallRegistry(spec) {
 }
 
 function verbStatus(spec, authority, options) {
-  const { wall, active: allWallRows, retired: allRetiredRows, fleetRows, staleCount } = wallRegistry(spec);
+  const { wall, active: allWallRows, retired: allRetiredRows, fleetRows, staleCount, wallStatus } = wallRegistry(spec);
   const state = readFleetState(spec);
   const stateMissions = Array.isArray(state?.missions) ? state.missions : [];
 
@@ -1068,6 +1072,9 @@ function verbStatus(spec, authority, options) {
     if (staleCount > 0) {
       process.stdout.write(`reconcile: the wall reports ${staleCount} stale mission(s) with no live pane and no registry row (they still hold L1 capacity) — run \`bash <ufoRoot>/scripts/ufo-sighting reconcile\`\n`);
     }
+    if (wallStatus === "absent") {
+      process.stdout.write("reconcile: the wall reports status \"absent\" (no wall session) — every mission below is reported not-on-wall; nothing is running\n");
+    }
   }
   return EXIT_OK;
 }
@@ -1085,6 +1092,11 @@ function verbClose(spec, authority, options) {
   const registryById = registry.byId;
   const liveById = liveViewById(registry);
   const live = targets.filter((mission) => wallRowLive(liveById.get(mission.id)));
+  if (registry.wallStatus === "absent") {
+    // The wall reports itself absent (no session): every target would resolve
+    // as "absent" and the run would exit 0 having completed nothing. Refuse.
+    typed("WALL_ABSENT", `the sighting wall reports status "absent" — nothing was completed; open it first (\`bash <ufoRoot>/scripts/ufo-sighting open\`)`);
+  }
   if (live.length > 0 && !options.force) {
     typed("PANE_LIVE", `mission(s) ${live.map((mission) => mission.id).join(", ")} still live on the wall; refusing to complete a live mission (pass --force to complete anyway — their panes keep running)`);
   }
