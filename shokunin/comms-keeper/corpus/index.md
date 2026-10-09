@@ -44,3 +44,4 @@ mission's round-1 research wave (29 lanes,
 | [2026-10-09-card-boundaries.md](2026-10-09-card-boundaries.md) | delineation vs other cards; errata to evidence-auditor hub claims | 2026-10-09 |
 | [2026-10-09-card-convention.md](2026-10-09-card-convention.md) | shokunin card/corpus convention this card matches | 2026-10-09 |
 | [2026-10-09-hub-b-m4-review-audit.md](2026-10-09-hub-b-m4-review-audit.md) | audit: hub B M4 review files ↔ ref= log lines, seq/round, rework actor, round cap, index vs state | 2026-10-09 |
+| [2026-10-09-r2-errata.md](2026-10-09-r2-errata.md) | errata: 16 falsified round-1 claims, corrections + evidence | 2026-10-09 |
