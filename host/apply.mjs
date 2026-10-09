@@ -578,6 +578,22 @@ function buildWaveSpec(lanes) {
   };
 }
 
+// Both child processes below read the band authority by env var: the wave
+// planner resolves its policy through UFO_PROJECT_ROOT + UFO_CONFIG_PATH
+// before falling back to <root>/config/ufo.json. Inheriting an ambient pair
+// would let the wave gate's own ok line quote a band read from a different
+// file — or fail the dry run on a config this script never meant to probe.
+// Bind both to the checkout named by --ufo-root so each leg proves exactly the
+// file it reports, in any caller environment.
+function plannerEnv(extra = {}) {
+  return {
+    ...process.env,
+    UFO_PROJECT_ROOT: opts.ufoRoot,
+    UFO_CONFIG_PATH: path.join(opts.ufoRoot, "config", "ufo.json"),
+    ...extra,
+  };
+}
+
 function waveGate(delta) {
   rule("6/8  wave gate — ufo-swarm-wave.mjs plan against the 16-32 wave band");
   const script = path.join(opts.ufoRoot, "scripts", "ufo-swarm-wave.mjs");
@@ -598,7 +614,7 @@ function waveGate(delta) {
     const result = spawnSync(
       process.execPath,
       [path.join("scripts", "ufo-swarm-wave.mjs"), "plan", "--spec", specPath],
-      { cwd: opts.ufoRoot, encoding: "utf8", env: { ...process.env, UFO_OMP_GLOBAL_CONFIG_PATH: CANDIDATE } },
+      { cwd: opts.ufoRoot, encoding: "utf8", env: plannerEnv({ UFO_OMP_GLOBAL_CONFIG_PATH: CANDIDATE }) },
     );
     if (result.status !== 0) {
       for (const line of (result.stderr ?? "").split("\n").filter(Boolean)) say(`       ${redact(line)}`);
@@ -695,7 +711,7 @@ function runRealCheck() {
     {
       cwd: opts.ufoRoot,
       encoding: "utf8",
-      env: { ...process.env, UFO_OMP_GLOBAL_CONFIG_PATH: CANDIDATE },
+      env: plannerEnv({ UFO_OMP_GLOBAL_CONFIG_PATH: CANDIDATE }),
     },
   );
   return {
