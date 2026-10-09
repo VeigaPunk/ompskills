@@ -39,6 +39,11 @@
  *     (live rows plus its retired `completed[]`/`stopped[]` history), because
  *     a run id stays reserved while any registered row holds it — a retired
  *     row is recorded as RUN_ID_RESERVED, never re-launched;
+ *   - liveness is read from the wall's LIVE view only (`status --lite`'s
+ *     `missions[]`, `levels.l1` = the wall's own `isLiveStatus`), never from a
+ *     retired row's `phase`, which is a dispatcher observation: a retired row
+ *     therefore can never read as live, and a live-view row without a level
+ *     reads as live rather than risking a completion or a re-launch;
  *   - `status` reconciles the wall against `<stateDir>/fleet.json` in both
  *     directions and writes nothing;
  *   - `close` refuses (PANE_LIVE) when a target's pane is still live on the
@@ -88,13 +93,6 @@ const MISSION_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const MAXTIME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:+-]*$/;
 
 const VERBS = new Set(["plan", "launch", "status", "close"]);
-
-// The wall's live phases (`statusPhase`: starting -> queued, running ->
-// working). `phase` is the fallback liveness answer for a row that carries no
-// numeric `levels.l1`; a manifest-live row can still show a non-live phase when
-// the dispatcher's observation sidecar disagrees, so `levels.l1` — which is
-// the wall's own `isLiveStatus` — always wins when it is present.
-const LIVE_PHASES = new Set(["queued", "working"]);
 
 class TypedError extends Error {
   constructor(code, message) {
@@ -462,23 +460,30 @@ function wallRowId(row) {
   return row?.runId ?? row?.missionId ?? null;
 }
 
-/** The wall's own liveness answer. `levels.l1` is `isLiveStatus(status)` in the
- * wall's mission view; `phase` is the same status in its five-bucket
- * vocabulary. Prefer the numeric level — it is the manifest truth, and the
- * dispatcher's observation sidecar can leave a manifest-live row with a
- * non-live phase. The phase fallback stays for a row that carries no level at
- * all: an unclassifiable row must never read as "dead" and be completed
- * without `--force`. (Every row today carries both; verified against
- * `missionView` in ufo-sighting.mjs.) */
+/** Liveness for a row of the wall's LIVE view (`missions[]`). `levels.l1` is
+ * `isLiveStatus(status)` there — the manifest truth, and it always wins: a
+ * row's `phase` can instead come from the dispatcher's observation sidecar
+ * (`obs?.phase ?? statusPhase(mission)`) and a stale observation can disagree.
+ * A live-view row that carries no numeric level is reported LIVE, because the
+ * two consumers of this answer both act on "not live" — `close` completes the
+ * mission and `launch` re-launches the run id — and neither may happen by
+ * accident. Retired rows (`completed[]`/`stopped[]`) are NEVER passed here:
+ * they carry no `levels` and their `phase` is an observation, so liveness is
+ * sourced by array membership, not by guessing from the phase. */
 function wallRowLive(row) {
   if (row === undefined || row === null) return false;
   const l1 = row.levels?.l1;
   if (typeof l1 === "number") return l1 > 0;
-  return LIVE_PHASES.has(row.phase);
+  return true;
 }
 
 function wallRowPhase(row) {
   return row?.phase ?? (wallRowLive(row) ? "working" : "unknown");
+}
+
+/** The wall's live view keyed by run id: the ONLY place liveness is read from. */
+function liveViewById(registry) {
+  return new Map(registry.active.map((row) => [wallRowId(row), row]));
 }
 
 /** The state file `launch` wrote, or null when it is absent/unreadable — a
@@ -608,7 +613,9 @@ function verbLaunch(spec, authority, options) {
   // retired rows, any fleet: the wall reserves a run id globally
   // (`ensureUniqueMission` scans every registered row), so a row that holds our
   // id blocks a fresh launch whether it is live or long retired.
-  const { byId: wallById } = wallRegistry(spec);
+  const registry = wallRegistry(spec);
+  const { byId: registryById } = registry;
+  const liveById = liveViewById(registry);
   const previousById = new Map((readFleetState(spec)?.missions ?? []).map((mission) => [mission.id, mission]));
   mkdirSync(spec.stateDir, { recursive: true });
 
@@ -637,9 +644,9 @@ function verbLaunch(spec, authority, options) {
     //    a run id globally, and a live pane must be recorded even when the
     //    local worktree cannot be recreated (a failed `omp worktree add` used
     //    to drop the pane reference on the floor).
-    const existing = wallById.get(row.id);
+    const existing = registryById.get(row.id);
     if (existing !== undefined) {
-      const live = wallRowLive(existing);
+      const live = wallRowLive(liveById.get(row.id));
       record.paneId = existing.paneId ?? null;
       record.panePhase = wallRowPhase(existing);
       record.paneReused = true;
@@ -974,8 +981,10 @@ function verbClose(spec, authority, options) {
   // The wall is the only authority on whether a pane is live. Refuse the whole
   // close while any target is live: completing one mission of a fleet while a
   // sibling still runs tears the fleet apart for a mission that is not done.
-  const wallById = new Map([...wallRegistry(spec).byId]);
-  const live = targets.filter((mission) => wallRowLive(wallById.get(mission.id)));
+  const registry = wallRegistry(spec);
+  const registryById = registry.byId;
+  const liveById = liveViewById(registry);
+  const live = targets.filter((mission) => wallRowLive(liveById.get(mission.id)));
   if (live.length > 0 && !options.force) {
     typed("PANE_LIVE", `mission(s) ${live.map((mission) => mission.id).join(", ")} still live on the wall; refusing to complete a live mission (pass --force to complete anyway — their panes keep running)`);
   }
@@ -985,7 +994,7 @@ function verbClose(spec, authority, options) {
   const results = [];
   const failures = [];
   for (const mission of targets) {
-    const row = wallById.get(mission.id);
+    const row = registryById.get(mission.id);
     const worktree = path.join(spec.worktreeRoot, mission.id);
     if (row === undefined) {
       // Nothing on the wall to complete (a mission that never launched, or was
@@ -994,7 +1003,7 @@ function verbClose(spec, authority, options) {
       results.push({ id: mission.id, status: "absent", completed: false, paneLive: false, worktree });
       continue;
     }
-    const paneLive = wallRowLive(row);
+    const paneLive = wallRowLive(liveById.get(mission.id));
     const completed = wallCli(spec, "complete", "--mission", mission.id, "--note", "tower-fleet close");
     const detail = (completed.stdout || completed.stderr).slice(0, 200);
     if (completed.status !== 0) {
