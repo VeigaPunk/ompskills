@@ -26,4 +26,5 @@ Append-only. One row per entry, in the order entries were added. Never reorder o
 | [2026-10-09-launcher-integration.md](2026-10-09-launcher-integration.md) | the launcher's `wallCli`/`launchResult`/`close` contract | 2026-10-09 |
 | [2026-10-09-steering-provenance.md](2026-10-09-steering-provenance.md) | the steer store and the unauthenticated `source:"l0"` label | 2026-10-09 |
 | [2026-10-09-skill-prose-crosscheck.md](2026-10-09-skill-prose-crosscheck.md) | tower/swarm skill wall prose vs the CLI and launcher | 2026-10-09 |
+| [2026-10-09-errata-r2.md](2026-10-09-errata-r2.md) | round-2 audit corrections for the corpus entries and the card | 2026-10-09 |
 | [2026-10-09-verification-smoke.md](2026-10-09-verification-smoke.md) | three-question smoke: `peek --lines` clamp, `remove` absent-row exit 0, default-vs-fleet capacity keys | 2026-10-09 |
