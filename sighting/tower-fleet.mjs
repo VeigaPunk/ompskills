@@ -681,8 +681,8 @@ function verbLaunch(spec, authority, options) {
       warn(`worktree ${row.worktree} already exists — reusing it as-is`);
       record.worktreeReused = true;
     } else {
-      if (record.paneReused) {
-        record.worktreeMissing = true;
+      const adoptedWithoutTree = record.paneReused;
+      if (adoptedWithoutTree) {
         warn(`mission ${row.id} reuses a wall row but its worktree ${row.worktree} is missing`);
       }
       const added = run([
@@ -693,12 +693,15 @@ function verbLaunch(spec, authority, options) {
         spec.base,
       ]);
       if (added.status !== 0) {
+        // The tree is still gone, so only now is the fact worth recording.
+        if (adoptedWithoutTree) record.worktreeMissing = true;
         const detail = `omp worktree add exited ${added.status}: ${(added.stderr || added.stdout).slice(0, 400)}`;
         record.failure = { code: "WORKTREE_ADD_FAILED", detail };
         failures.push({ id: row.id, detail });
         records.push(record);
         continue;
       }
+      if (adoptedWithoutTree) record.worktreeRecreated = true;
     }
 
     // 3. skills — copy each named skill into the worktree; missing is a warning.
