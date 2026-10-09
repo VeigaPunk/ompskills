@@ -127,26 +127,48 @@ them before dispatch.
 ## Sighting fleet (tower mode)
 
 `sighting/tower-fleet.mjs` turns the wall into a declared fleet: one
-interactive omp pane per L1 mission. Verbs: `plan` (default, writes nothing)
-· `launch --apply` · `status` · `close --apply`; a mutation verb without
-`--apply` refuses (`MUTATION_REQUIRES_APPLY`). The fleet spec JSON declares
-`fleet`, `repo`, `base`, `ufoRoot`, and missions (`id`, `title`, `axis`,
-`goal`, pairwise-disjoint repo-relative `scope` prefixes, `skills`);
-`launch --apply` gives each mission its own worktree under
-`<repo>/.tower/worktrees/<fleet>/<id>` on branch `tower/<fleet>/<id>`,
-copies its skills in, renders `sighting/l1-prompt.md` as the pane's prompt,
-and opens its pane on the `ufo_sighting` wall's fleet window
-(`launch --fleet <fleet>`) — at most `sighting.dispatch.maxConcurrentL1`
-live L1 panes, bounded per window by `sighting.windowPaneCeiling`. Each pane
-is the mission's self-iterating coordinator, dispatching swarm waves of
-`sighting.dispatch.swarm.waveMinLanes`–`waveMaxLanes` lanes with up to
-`maxLanes` lanes per round — every number read live from
-`<ufoRoot>/config/ufo.json`, never hardcoded, and routing only through
-`--model @<missionFormat.l1Alias>` (bare `m_*` aliases; never a pinned
-provider/model). Writer isolation is enforced at the fleet gate
-(`SCOPE_OVERLAP` refuses intersecting mission scopes) and inside each
-mission: a lane that writes gets its own worktree and a disjoint path set,
-otherwise lanes are read-only. `close --apply` completes wall missions only;
-it never removes a worktree automatically — it prints the exact
-`git -C <repo> worktree remove <path>` per mission and warns that unmerged
-work must be preserved first.
+interactive omp pane per L1 mission in the wall's fleet window. Verbs: `plan`
+(default, writes nothing), `launch --apply`, `status`, `close --apply`; every
+verb needs `--spec <fleet.json>` and accepts `--json`, and `launch`/`close`
+refuse without `--apply` (`MUTATION_REQUIRES_APPLY`, exit 2) before they read
+the spec or touch the wall. Typed refusals print `{ok:false,code,message}` on
+stderr and exit 2; usage errors exit 64.
+
+The fleet spec declares `fleet`, `repo`, `ufoRoot`, and missions (`id`,
+`title`, `axis`, `goal`, repo-relative `scope` prefixes, optional `skills`);
+`base` (default: the repo's HEAD branch), `stateDir`
+(`<repo>/.tower/fleets/<fleet>`), `worktreeRoot`
+(`<repo>/.tower/worktrees/<fleet>`), `roundCeiling` (`1`), and `maxTime`
+(`3h`) have defaults. `launch --apply` creates each mission's worktree under
+`<worktreeRoot>/<id>` on a branch `tower/<fleet>/<id>` cut from `base`, copies
+its `skills` in (first match among `<repo>/.omp/skills`,
+`<ufoRoot>/.omp/skills`, and `~/.agents/skills`; a missing one only warns),
+writes its rendered `sighting/l1-prompt.md` prompt to
+`<stateDir>/<id>.prompt.md` with its session dir under
+`<stateDir>/sessions/<id>`, and opens its pane with `--cwd` set to that
+worktree. A spec declaring more missions than
+`sighting.dispatch.maxConcurrentL1` or `sighting.windowPaneCeiling` is refused
+up front (`L1_CEILING_EXCEEDED` first, else `PANE_CEILING_EXCEEDED` — `plan`
+refuses too), and a failed worktree add aborts the run outright
+(`WORKTREE_ADD_FAILED`). An existing path at a mission's worktree location is
+reused with a warning; a pane whose launch fails is recorded while the rest of
+the fleet still comes up (`LAUNCH_PARTIAL`, exit 2), and
+`<stateDir>/fleet.json` still records every mission.
+
+Each pane is the mission's self-iterating coordinator, dispatching swarm waves
+of `sighting.dispatch.swarm.waveMinLanes`–`waveMaxLanes` lanes with up to
+`maxLanes` lanes per round — the swarm band and both ceilings are read live
+from `<ufoRoot>/config/ufo.json`, never hardcoded, and routing is only through
+`--model @<missionFormat.l1Alias>`. Writer isolation at the fleet gate is
+enforced by the launcher (`SCOPE_OVERLAP` refuses intersecting mission
+scopes); inside each mission it is the pane's instructed duty: a lane that
+writes gets its own worktree and a disjoint path set, otherwise lanes are
+read-only.
+
+`status` reads the wall's fleet rows plus each mission's round receipts.
+`close --apply` completes wall missions and never removes a worktree: it
+prints the exact `git -C <repo> worktree remove <path>` per mission and warns
+that unmerged work must be preserved first, though a failing wall `complete`
+aborts first (`COMPLETE_FAILED`, exit 2). The launcher's own writes land
+only under `<stateDir>` and `<worktreeRoot>`, and every shell-out is
+`spawnSync` with an explicit argv array — never a shell string.
