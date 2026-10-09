@@ -368,7 +368,18 @@ function loadSpec(specPath, authority) {
             return skill;
           })
         : (typed("INVALID_SPEC", `mission ${id} skills must be an array of skill names`), []));
-    normalized.push({ id, title: mission.title.trim(), axis: mission.axis.trim(), goal: mission.goal.trim(), scope, skills });
+    const l1Alias = mission.l1Alias === undefined || mission.l1Alias === null
+      ? authority.l1Alias
+      : mission.l1Alias;
+    if (typeof l1Alias !== "string" || !/^[A-Za-z0-9_.:-]+$/.test(l1Alias)) {
+      typed("INVALID_SPEC", `mission ${id} l1Alias ${JSON.stringify(mission.l1Alias)} is not a safe alias token`);
+    }
+    const overlays = mission.overlays === undefined || mission.overlays === null
+      ? []
+      : (Array.isArray(mission.overlays)
+        ? mission.overlays.map((entry) => resolveRepoPath(repo, entry, `mission ${id} overlays entry`))
+        : (typed("INVALID_SPEC", `mission ${id} overlays must be an array of --config paths`), []));
+    normalized.push({ id, title: mission.title.trim(), axis: mission.axis.trim(), goal: mission.goal.trim(), scope, skills, l1Alias, overlays });
   }
 
   // Pairwise disjoint scopes — one writer per path, enforced at the fleet gate.
@@ -472,8 +483,11 @@ function buildOmpArgv(mission, spec, authority) {
     "--cwd", worktree,
     "--session-dir", path.join(spec.stateDir, "sessions", mission.id),
     "--max-time", spec.maxTime,
-    "--model", `@${authority.l1Alias}`,
+    "--model", `@${mission.l1Alias ?? authority.l1Alias}`,
+    // omp layers repeated --config files later-over-earlier: the mission's
+    // overlays must follow the nightcall config so they win.
     "--config", path.join(spec.ufoRoot, "config", "mission-nightcall.yml"),
+    ...(mission.overlays ?? []).flatMap((overlay) => ["--config", overlay]),
     "--print-thoughts",
     "--auto-approve",
     `@${path.join(spec.stateDir, `${mission.id}.prompt.md`)}`,
@@ -606,6 +620,8 @@ function buildPlan(spec, authority) {
       goal: mission.goal,
       scope: mission.scope,
       skills: mission.skills,
+      l1Alias: mission.l1Alias,
+      overlays: mission.overlays,
       worktree,
       branch: `tower/${spec.fleet}/${mission.id}`,
       promptPath,
@@ -644,6 +660,8 @@ function printPlanHuman(spec, authority, plan) {
     lines.push(`  branch:   ${row.branch}`);
     lines.push(`  prompt:   ${row.promptPath}`);
     lines.push(`  scope:    ${row.scope.join(", ")}`);
+    lines.push(`  model:    @${row.l1Alias}`);
+    if (row.overlays.length > 0) lines.push(`  overlays: ${row.overlays.join(", ")}`);
     lines.push(`  launch:   ${row.launchArgv.map(quoteArg).join(" ")}`);
   }
   lines.push("");
@@ -742,6 +760,8 @@ function verbLaunch(spec, authority, options) {
       branch: row.branch,
       base: spec.base,
       promptPath: row.promptPath,
+      l1Alias: row.l1Alias,
+      overlays: row.overlays,
       skills: [],
       paneId: null,
       paneReused: false,

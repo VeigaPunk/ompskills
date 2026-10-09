@@ -135,7 +135,10 @@ the spec or touch the wall. Typed refusals print `{ok:false,code,message}` on
 stderr and exit 2; usage errors exit 64.
 
 The fleet spec declares `fleet`, `repo`, `ufoRoot`, and missions (`id`,
-`title`, `axis`, `goal`, repo-relative `scope` prefixes, optional `skills`);
+`title`, `axis`, `goal`, repo-relative `scope` prefixes, optional `skills`,
+optional `l1Alias` — a per-mission L1 alias, default the config's
+`missionFormat.l1Alias` — and optional `overlays`, extra omp `--config`
+paths applied after `mission-nightcall.yml`);
 `base` (default: the repo's HEAD branch), `stateDir`
 (`<repo>/.tower/fleets/<fleet>`), `worktreeRoot`
 (`<repo>/.tower/worktrees/<fleet>`), `roundCeiling` (`1`), and `maxTime`
@@ -159,7 +162,8 @@ Each pane is the mission's self-iterating coordinator, dispatching swarm waves
 of `sighting.dispatch.swarm.waveMinLanes`–`waveMaxLanes` lanes with up to
 `maxLanes` lanes per round — the swarm band and both ceilings are read live
 from `<ufoRoot>/config/ufo.json`, never hardcoded, and routing is only through
-`--model @<missionFormat.l1Alias>`. Writer isolation at the fleet gate is
+`--model @<l1Alias>` — the mission's own `l1Alias`, or
+`missionFormat.l1Alias` by default. Writer isolation at the fleet gate is
 enforced by the launcher (`SCOPE_OVERLAP` refuses intersecting mission
 scopes); inside each mission it is the pane's instructed duty: a lane that
 writes gets its own worktree and a disjoint path set, otherwise lanes are

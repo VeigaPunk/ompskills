@@ -1680,6 +1680,80 @@ say("launch — every derived write target stays beneath its validated root");
   check("derived-path probes leave the band authority byte-identical",
     readFileSync(configPath).equals(configBefore), "fixture config changed");
 }
+// ── 38. per-mission l1Alias and overlays ───────────────────────────────────
+say("plan — per-mission l1Alias and --config overlays");
+{
+  const mixed = launcher(["plan", "--spec", writeSpec(baseSpec({
+    missions: [
+      {
+        id: "tf-alias", title: "A", axis: "a", goal: "a", scope: ["src/alias"], skills: [],
+        l1Alias: "m_lane",
+        overlays: ["overlays/lane.yml", "/abs/lane-extra.yml"],
+      },
+      { id: "tf-default", title: "B", axis: "b", goal: "b", scope: ["src/default"], skills: [] },
+    ],
+  })), "--json"]);
+  if (check("per-mission fields exit 0", mixed.status === 0, `got ${mixed.status}; stderr ${mixed.stderr.slice(0, 200)}`)) {
+    const plan = JSON.parse(mixed.stdout);
+    const [aliasRow, defaultRow] = plan.missions;
+    check("per-mission alias reaches --model", aliasRow.ompArgv[aliasRow.ompArgv.indexOf("--model") + 1] === "@m_lane",
+      aliasRow.ompArgv.join(" "));
+    check("default alias keeps the authority alias", defaultRow.ompArgv[defaultRow.ompArgv.indexOf("--model") + 1] === `@${BAND.l1Alias}`,
+      defaultRow.ompArgv.join(" "));
+    check("plan row echoes resolved l1Alias", aliasRow.l1Alias === "m_lane" && defaultRow.l1Alias === BAND.l1Alias,
+      `${aliasRow.l1Alias} vs ${defaultRow.l1Alias}`);
+    const expectedOverlays = [path.resolve(REPO, "overlays/lane.yml"), "/abs/lane-extra.yml"];
+    check("plan row echoes resolved overlays", JSON.stringify(aliasRow.overlays) === JSON.stringify(expectedOverlays),
+      JSON.stringify(aliasRow.overlays));
+    check("absent overlays resolve to empty", defaultRow.overlays.length === 0, JSON.stringify(defaultRow.overlays));
+    const nightcall = path.join(UFO_ROOT, "config", "mission-nightcall.yml");
+    const configs = [];
+    aliasRow.ompArgv.forEach((token, i) => { if (token === "--config") configs.push(aliasRow.ompArgv[i + 1]); });
+    check("overlays appended after the nightcall config", JSON.stringify(configs) === JSON.stringify([nightcall, ...expectedOverlays]),
+      JSON.stringify(configs));
+    check("no-overlays mission keeps the single nightcall config",
+      defaultRow.ompArgv.filter((token) => token === "--config").length === 1
+        && defaultRow.ompArgv[defaultRow.ompArgv.indexOf("--config") + 1] === nightcall,
+      defaultRow.ompArgv.join(" "));
+  }
+  const human = launcher(["plan", "--spec", writeSpec(baseSpec({
+    missions: [{
+      id: "tf-alias", title: "A", axis: "a", goal: "a", scope: ["src/alias"], skills: [],
+      l1Alias: "m_lane", overlays: ["overlays/lane.yml"],
+    }],
+  }))]);
+  check("human plan shows the model line", human.status === 0 && human.stdout.includes("  model:    @m_lane"),
+    `exit ${human.status}; ${JSON.stringify(human.stdout.slice(0, 300))}`);
+  check("human plan shows the overlays line", human.status === 0 && human.stdout.includes(`  overlays: ${path.resolve(REPO, "overlays/lane.yml")}`),
+    JSON.stringify(human.stdout.slice(0, 300)));
+  const humanDefault = launcher(["plan", "--spec", writeSpec(baseSpec({
+    missions: [{ id: "tf-bare", title: "B", axis: "b", goal: "b", scope: ["src/bare"], skills: [] }],
+  }))]);
+  check("human plan omits the overlays line when empty",
+    humanDefault.status === 0 && !humanDefault.stdout.includes("  overlays:"),
+    JSON.stringify(humanDefault.stdout.slice(0, 300)));
+
+  const singleMission = (over = {}) => baseSpec({
+    missions: [{ id: "tf-a", title: "A", axis: "a", goal: "g", scope: ["src/a"], skills: [], ...over }],
+  });
+  const refused = (id, spec, expected) => {
+    const result = launcher(["plan", "--spec", writeSpec(spec), "--json"]);
+    expectTyped(id, result, "INVALID_SPEC");
+    check(`${id} message`, typedError(result)?.message === expected, `got ${JSON.stringify(typedError(result)?.message)}`);
+  };
+  refused("l1Alias with space", singleMission({ l1Alias: "m x" }), 'mission tf-a l1Alias "m x" is not a safe alias token');
+  refused("l1Alias with semicolon", singleMission({ l1Alias: "m_x;rm -rf /" }), 'mission tf-a l1Alias "m_x;rm -rf /" is not a safe alias token');
+  refused("l1Alias with @ prefix", singleMission({ l1Alias: "@m_x" }), 'mission tf-a l1Alias "@m_x" is not a safe alias token');
+  refused("l1Alias empty", singleMission({ l1Alias: "" }), 'mission tf-a l1Alias "" is not a safe alias token');
+  refused("l1Alias non-string", singleMission({ l1Alias: 42 }), "mission tf-a l1Alias 42 is not a safe alias token");
+  refused("overlays non-array", singleMission({ overlays: "lane.yml" }), "mission tf-a overlays must be an array of --config paths");
+  refused("overlays non-string entry", singleMission({ overlays: [42] }), "mission tf-a overlays entry must be a non-empty string");
+  refused("overlays empty entry", singleMission({ overlays: [""] }), "mission tf-a overlays entry must be a non-empty string");
+  const overlayEmpty = launcher(["plan", "--spec", writeSpec(singleMission({ overlays: [] })), "--json"]);
+  check("overlays empty array accepted", overlayEmpty.status === 0 && JSON.parse(overlayEmpty.stdout).missions[0].overlays.length === 0,
+    `exit ${overlayEmpty.status}; stderr ${JSON.stringify(overlayEmpty.stderr.slice(0, 200))}`);
+  check("alias/overlay refusals write nothing", !existsSync(STATE_DIR) && !existsSync(TREES_DIR), "validation must precede any write");
+}
 // ── finish ──────────────────────────────────────────────────────────────────
 say(failures === 0 ? "ALL CHECKS PASS" : `FAILURES ${failures}`);
 finish(failures === 0 ? 0 : 1);
