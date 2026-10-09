@@ -36,3 +36,7 @@ Seed anchor: `ufo-fsd-alpha@5ace2559` (read-only). `config/ufo.json` was read fr
 | 2026-10-09-dispatcher-fixture-hooks.md | fleet-dispatcher.mjs env hooks, gatedExecPath, classifier fixture, verb side effects | 2026-10-09 |
 | 2026-10-09-fixture-route-rule.md | 'fixture routes only, never live providers': prose vs enforcement, gaps | 2026-10-09 |
 | 2026-10-09-drill-docs-drift.md | cross-surface drift table for drill/fixture claims | 2026-10-09 |
+| 2026-10-09-verify-contract-sync-gate.md | observed: scratch `--check` exit 1 ok:false (2 drifted, 18 missing, routes + surface fail); confirms shadow-executors risk | 2026-10-09 |
+| 2026-10-09-r2-errata.md | round-2 falsification ledger: 30 corrections, added omissions; wins over seeded entries | 2026-10-09 |
+| 2026-10-09-r2-substrate-incident.md | r2 lane clobbered substrate config/ufo.json via failed cd + relative write; restore record | 2026-10-09 |
+| 2026-10-09-verify-charter-dherd-question.md | charter sign today: exit 2 no_seal (no seal); with seal, drills ok:false exit 1 → sign exit 1 phase0_failed (names "contracts"); d-herd FAIL (gate exit 2 ≠ 1) | 2026-10-09 |
