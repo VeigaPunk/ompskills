@@ -684,6 +684,7 @@ function verbLaunch(spec, authority, options) {
       paneId: null,
       paneReused: false,
       panePhase: null,
+      retired: false,
       promptReused: false,
       worktreeReused: false,
       launchResult: null,
@@ -928,6 +929,7 @@ function wallRegistry(spec) {
     // there is no wall session (getStatus returns that at exit 0 with empty
     // arrays), so a mutation verb can refuse instead of silently no-oping.
     wallStatus: typeof wall.status === "string" ? wall.status : null,
+    hatch: typeof wall.hatch === "string" ? wall.hatch : null,
     fleetRows: active.filter((row) => (row.fleet ?? null) === spec.fleet),
     // Live rows LAST: if a run id ever appears in both views, the live row's
     // paneId/phase must win over a retired projection of the same mission.
@@ -936,7 +938,7 @@ function wallRegistry(spec) {
 }
 
 function verbStatus(spec, authority, options) {
-  const { wall, active: allWallRows, retired: allRetiredRows, fleetRows, staleCount, wallStatus } = wallRegistry(spec);
+  const { wall, active: allWallRows, retired: allRetiredRows, fleetRows, staleCount, wallStatus, hatch } = wallRegistry(spec);
   const state = readFleetState(spec);
   const stateMissions = Array.isArray(state?.missions) ? state.missions : [];
 
@@ -1039,6 +1041,7 @@ function verbStatus(spec, authority, options) {
       verb: "status",
       fleet: spec.fleet,
       wallStatus: wall.status ?? "present",
+      hatch: hatch ?? null,
       stateDir: spec.stateDir,
       reconciliation: {
         fleetStatePath,
