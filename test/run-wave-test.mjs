@@ -29,13 +29,20 @@
  *                  payload: 16 spawn lanes, no per-lane model param,
  *                  /skill:godspeed as the leading line of every spawned task,
  *                  registry persisted on disk.
- *   6. negatives   15 refused too_few_lanes; 33 refused wave_too_wide; 101
- *                  refused too_many_lanes; a resume-only wave admitted below the floor
- *                  (floor-exempt) and carrying no godspeed invocation; the
- *                  refusal vocabulary (duplicate_expansion, role_required,
- *                  unknown_role, impossible_band, resume_unknown_member,
- *                  resume_role_forbidden); an all-m_fast wave flagged
- *                  singleFamily while the mixed wave is not.
+ *   6. negatives   the spawn-wave size matrix, each expected code DERIVED from
+ *                  the resolved band (floor-1 refused too_few_lanes; floor and
+ *                  wave ceiling admitted; ceiling+1 and the 100-lane cap
+ *                  refused wave_too_wide; cap+1 too_many_lanes); the per-spec
+ *                  cap (below the floor impossible_band, at the ceiling it
+ *                  tightens, above the policy cap it is clamped and never
+ *                  widened); the resume exemption measured at BOTH ends of the
+ *                  band it is exempt from (below the floor and above the
+ *                  ceiling admitted, past the cap still refused, and the
+ *                  resume-only dispatch carrying taskCall null, one hub send
+ *                  per lane, no godspeed invocation); resumes counted toward a
+ *                  spawn wave's total; the typed refusal vocabulary with its
+ *                  shared error envelope; and route-family concentration
+ *                  recomputed from the candidate seat table.
  *   7. wall        with --live-wall only: open the operator wall and capture
  *                  status --lite / overview / surface --json. Without it the
  *                  wall commands are printed, never run — a dry invocation
@@ -92,6 +99,9 @@ const WAVE_SESSION = "ufo_sighting";
 // cap above the round ceiling.
 const FLOOR_LANES = 16;
 const HARD_CEILING = 100;
+// Every typed refusal is this envelope on stderr with exit 1 — never the plan
+// schema the admitted path uses. Each code asserted below is checked with it.
+const WAVE_ERROR_SCHEMA = "ufo-swarm-wave-error-v1";
 
 // Two route families on purpose. Which family a role lands in is read from the
 // candidate global config at runtime (loadAuthorities), never hardcoded here:
@@ -141,6 +151,11 @@ function familyOf(role) {
 // never carries it.
 const GODSPEED_LEADING = /^\s*\/skill:godspeed(?:\s|$)/u;
 const GODSPEED_INVOCATION = "/skill:godspeed";
+
+/** How many godspeed invocation bytes a composed lane text carries anywhere. */
+function godspeedInvocations(text) {
+  return (String(text ?? "").match(/\/skill:godspeed/gu) ?? []).length;
+}
 
 const USAGE = [
   "usage: node test/run-wave-test.mjs [--ufo-root PATH] [--band fixture|live]",
@@ -453,11 +468,17 @@ function resolveBand(delta) {
   ok("band.live", `checkout band as it stands: waveMinLanes ${liveSwarm.waveMinLanes}, waveMaxLanes ${liveSwarm.waveMaxLanes}, maxLanes ${liveSwarm.maxLanes}, minLanes ${liveSwarm.minLanes}`);
 
   if (opts.band === "live") {
-    // The real file is the authority. It must already carry the post-apply
-    // floor, or every negative assertion below would be measuring the old band.
-    if (liveSwarm.waveMinLanes !== delta.swarm.waveMinLanes) {
-      die(1, `apply_not_landed: ${LIVE_CONFIG} still declares swarm.waveMinLanes ${liveSwarm.waveMinLanes}; `
-        + `--band live needs the merged delta (${delta.swarm.waveMinLanes}). `
+    // The real file is the authority, and the WHOLE band must already match the
+    // merged delta — a partial apply that landed the floor but left the wave
+    // ceiling or the cap pre-apply would otherwise pass this gate as the live
+    // authority, and only the downstream matrix would notice, only for the cells
+    // it happens to cover.
+    const drifted = ["waveMinLanes", "waveMaxLanes", "maxLanes"]
+      .filter((key) => liveSwarm[key] !== delta.swarm[key])
+      .map((key) => `swarm.${key} ${liveSwarm[key]} (delta ${delta.swarm[key]})`);
+    if (drifted.length > 0) {
+      die(1, `apply_not_landed: ${LIVE_CONFIG} still declares ${drifted.join(", ")}; `
+        + `--band live needs the merged delta (${["waveMinLanes", "waveMaxLanes", "maxLanes"].map((key) => `${key} ${delta.swarm[key]}`).join(", ")}). `
         + `Run \`node host/apply.mjs --apply\` first (the tower sequences this), or use --band fixture `
         + `to validate against the synthesized post-apply band.`);
     }
@@ -507,14 +528,21 @@ async function planAndRun(band) {
   const spec = buildSpec(opts.lanes, MIXED_ROLES, WAVE_NAME, "This lane is part of a live smoke test of the wave band and the sighting wall.");
   const specPath = specFile(`spec-${opts.lanes}.json`, spec);
   const specRoles = [...new Set(spec.items.map((item) => item.role))];
-  check("spec.count", spec.items.length === opts.lanes, `${spec.items.length} items in ${specPath}`);
-  check("spec.distinct", new Set(spec.items.map((item) => item.prompt)).size === spec.items.length,
-    `${new Set(spec.items.map((item) => item.prompt)).size} pairwise-distinct prompts — a duplicate expansion is a typed refusal, never a silent dedupe`);
-  check("spec.rolesExplicit", specRoles.every((role) => waveMod.SWARM_ROLES.has(role)) && specRoles.length >= 2,
-    `explicit taxonomy roles ${JSON.stringify(specRoles)}, all within the planner's ${waveMod.SWARM_ROLES.size} swarm roles (no frozen-topology seat)`);
+  const specPrompts = spec.items.map((item) => item.prompt);
+  check("spec.distinct", new Set(specPrompts).size === specPrompts.length,
+    `${new Set(specPrompts).size} pairwise-distinct prompts for ${specPrompts.length} lanes — a duplicate expansion is a typed refusal, never a silent dedupe, and run.distinctPrompts re-proves it on the composed payload`);
+  check("spec.rolesExplicit", spec.items.every((item) => typeof item.role === "string" && waveMod.SWARM_ROLES.has(item.role)) && specRoles.length >= 2,
+    `every one of the ${spec.items.length} lanes carries an explicit taxonomy role from the planner's ${waveMod.SWARM_ROLES.size} (${JSON.stringify(specRoles)}), so no lane hides behind its siblings`);
   check("spec.routeFamilies", new Set(specRoles.map(familyOf)).size >= 2,
     `roles span ${new Set(specRoles.map(familyOf)).size} route families on the candidate global config — ${specRoles.map((role) => `${role}→@${familyOf(role)}`).join(", ")} — so the wave is not a singleFamily concentration`);
-  check("spec.reportDir", spec.reportDir === REPORT_DIR, `reportDir ${spec.reportDir} (relative, no '..' segment)`);
+  // reportDir is the directory the planner joins into every lane's report path,
+  // so the shape the planner enforces is asserted here rather than described:
+  // relative, no backslash, no empty/'.'/'..' segment (the planner refuses a
+  // violating value as invalid_report_dir; --report-dir must fail here first).
+  check("spec.reportDir", typeof spec.reportDir === "string" && !spec.reportDir.startsWith("/")
+    && !spec.reportDir.includes("\\")
+    && !spec.reportDir.split("/").some((segment) => segment === "" || segment === "." || segment === ".."),
+    `reportDir ${JSON.stringify(spec.reportDir)} is a relative path with no empty, '.' or '..' segment`);
 
   rule(`4/8  plan — the wave validates against the real planner`);
   const planned = waveCli("plan", specPath, [], band.env);
@@ -530,10 +558,15 @@ async function planAndRun(band) {
     && plan?.policy?.waveMaxLanes === band.expected.waveMaxLanes
     && plan?.policy?.maxLanes === band.expected.maxLanes,
     `policy band ${plan?.policy?.waveMinLanes}-${plan?.policy?.waveMaxLanes}, cap ${plan?.policy?.maxLanes}, source ${plan?.policy?.source}`);
-  check("plan.floorBoundary", opts.lanes === band.expected.waveMinLanes || opts.lanes > band.expected.waveMinLanes,
-    opts.lanes === band.expected.waveMinLanes
-      ? `${opts.lanes} lanes sits exactly on the post-apply floor — the narrowest legal spawn wave`
-      : `${opts.lanes} lanes is inside the band ${band.expected.waveMinLanes}-${band.expected.waveMaxLanes}`);
+  // The plan's own provenance echo. `source` must be "config" — a planner that
+  // fell through to the built-in defaults (floor 2) would otherwise measure a
+  // band nobody declared — and the effective cap must be the resolved one, with
+  // the hard ceiling read from the planner rather than assumed.
+  check("plan.capAuthority", plan?.policy?.maxLanes === band.expected.maxLanes
+    && plan?.policy?.source === "config"
+    && plan?.policy?.hardCeiling === HARD_CEILING,
+    `the plan was judged by the resolved authority: maxLanes ${plan?.policy?.maxLanes} == cap ${band.expected.maxLanes}, source ${JSON.stringify(plan?.policy?.source)}, hard ceiling ${plan?.policy?.hardCeiling}`);
+  ok("plan.admittedSize", `${opts.lanes} lanes admitted inside ${band.expected.waveMinLanes}-${band.expected.waveMaxLanes}${opts.lanes === band.expected.waveMinLanes ? " (exactly the floor — the narrowest legal spawn wave)" : opts.lanes === band.expected.waveMaxLanes ? " (exactly the wave ceiling — the widest legal spawn wave)" : ""}`);
 
   rule(`5/8  run — the ufo-swarm-wave-dispatch-v1 payload`);
   const ran = waveCli("run", specPath, [], band.env);
@@ -545,13 +578,18 @@ async function planAndRun(band) {
   check("run.schema", payload?.schema === "ufo-swarm-wave-dispatch-v1", `schema ${payload?.schema}`);
 
   const tasks = payload?.taskCall?.tasks ?? [];
-  check("run.laneCount", tasks.length === opts.lanes,
-    `${tasks.length} spawn lanes in exactly one taskCall (resumeSends ${payload?.resumeSends?.length ?? 0})`);
+  // A payload with the wrong lane count is a structural failure, not a datum:
+  // every `every()` assertion below would be vacuously true on an empty list, so
+  // this stops the run instead of letting a short payload pass them all.
+  if (tasks.length !== opts.lanes) {
+    gate("run.laneCount", `${tasks.length} spawn lanes in the payload, want ${opts.lanes} (resumeSends ${payload?.resumeSends?.length ?? 0}) — every lane assertion below would be vacuous on a short list`);
+  }
+  ok("run.laneCount", `${tasks.length} spawn lanes in exactly one taskCall (resumeSends ${payload?.resumeSends?.length ?? 0})`);
   check("run.noModelParam", tasks.every((task) => !("model" in task)),
     `no lane carries a model param — task keys are ${JSON.stringify([...new Set(tasks.flatMap((task) => Object.keys(task)))].sort())}; routing is the global config's role→alias table`);
   check("run.godspeedLeading", tasks.every((task) => typeof task.task === "string" && GODSPEED_LEADING.test(task.task)),
     `every spawned task opens with the leading line ${JSON.stringify(GODSPEED_INVOCATION)}`);
-  check("run.godspeedSingle", tasks.every((task) => (task.task.match(/\/skill:godspeed/gu) ?? []).length === 1),
+  check("run.godspeedSingle", tasks.every((task) => godspeedInvocations(task.task) === 1),
     "no task stacks a second godspeed invocation (hook idempotence parity)");
   check("run.distinctPrompts", new Set(tasks.map((task) => task.task)).size === tasks.length,
     `${new Set(tasks.map((task) => task.task)).size} pairwise-distinct lane texts`);
@@ -572,8 +610,10 @@ async function planAndRun(band) {
   }
   const registry = parseJson(readFileSync(registryAbs, "utf8"), "run.registry");
   check("run.registrySchema", registry?.schema === "ufo-swarm-registry-v1", `${registryRel} is ${registry?.schema}`);
-  check("run.registryMembers", Object.keys(registry?.members ?? {}).length === opts.lanes,
-    `${Object.keys(registry?.members ?? {}).length} members, every spawn row agentId null until \`record\` fills it`);
+  const registryRows = Object.values(registry?.members ?? {});
+  check("run.registryMembers", registryRows.length === opts.lanes
+    && registryRows.every((row) => row.kind === "spawn" && row.agentId === null),
+    `${registryRows.length} members, every row kind "spawn" with a null agentId until \`record\` fills it (agentIds seen: ${JSON.stringify([...new Set(registryRows.map((row) => row.agentId))])})`);
   const registryCopy = path.join(EVIDENCE, "swarm-registry.json");
   copyFileSync(registryAbs, registryCopy);
   ok("run.registryCopy", `copied to ${registryCopy} (authoritative copy stays at ${registryAbs})`);
@@ -581,70 +621,289 @@ async function planAndRun(band) {
   return { spec, specPath, plan, payload, payloadPath, registryRel, registryAbs, registryCopy };
 }
 
+// ── step 6 helpers: expectations derived from the band, not a restated table
+/**
+ * What the resolved band says a spawn wave of `lanes` must get. Deriving the
+ * expected code from the band (rather than listing edges as literals) is what
+ * makes a band that moved without this script changing fail here instead of
+ * quietly measuring the old edges.
+ */
+function bandVerdict(lanes, band) {
+  if (lanes > band.expected.maxLanes) return "too_many_lanes";
+  if (lanes > band.expected.waveMaxLanes) return "wave_too_wide";
+  if (lanes < band.expected.waveMinLanes) return "too_few_lanes";
+  return null;
+}
+
+/** A spawn spec of `lanes` lanes, with an optional per-spec cap. */
+function bandSpec(lanes, wave, maxLanes) {
+  const spec = buildSpec(lanes, MIXED_ROLES, wave, "Never dispatched: this spec exists to prove a band boundary.");
+  if (maxLanes !== undefined) spec.maxLanes = maxLanes;
+  return spec;
+}
+
+/** Plan one spec, keep its raw output as evidence, return the parsed result. */
+function planCase(evidenceName, specPath, band) {
+  const result = waveCli("plan", specPath, [], band.env);
+  writeEvidence(evidenceName, result.raw || "<empty stdout and stderr>\n");
+  return result;
+}
+
+/**
+ * One typed refusal as a single conjunction: exit 1, the exact code, and the
+ * shared refusal envelope. A refusal that exits 0, names another code, or drops
+ * the envelope fails — none of those is a pass.
+ */
+function refusal(id, result, code, why) {
+  const json = result.json;
+  const observed = `exit ${result.status}, code ${JSON.stringify(json?.code ?? null)}, schema ${JSON.stringify(json?.schema ?? null)}`;
+  check(id, result.status === 1 && json?.code === code && json?.schema === WAVE_ERROR_SCHEMA,
+    `${code} (${observed}) — ${why}${json?.message ? `: ${json.message}` : ""}`);
+  return json;
+}
+
+/** One admitted plan as a single conjunction: exit 0 and the exact counts. */
+function admission(id, result, expected, why) {
+  const counts = result.json?.counts ?? null;
+  check(id, result.status === 0 && counts !== null
+    && counts.spawn === expected.spawn && counts.resume === expected.resume && counts.total === expected.total,
+    `exit ${result.status}, counts ${JSON.stringify(counts)} (want ${JSON.stringify(expected)}) — ${why}`);
+  return result.json;
+}
+
+/**
+ * A prior wave's registry, sized past one legal wave. The planner needs an
+ * owned member per resume lane, and no legal wave carries more than the wave
+ * ceiling — so the resume-only shapes that must sit ABOVE the ceiling, and the
+ * cap boundary itself, can only be declared against a registry wider than any
+ * one wave. This fixture is that registry; it is `ufo-swarm-registry-v1`, the
+ * planner validates it like any other, and a malformed or duplicated handle
+ * would refuse rather than pass.
+ */
+function priorsFixture(count, wave) {
+  const members = {};
+  for (let i = 0; i < count; i += 1) {
+    members[`FixturePrior${String(i + 1).padStart(3, "0")}`] = {
+      kind: "spawn",
+      role: MIXED_ROLES[i % MIXED_ROLES.length],
+      agentId: `agent-prior${String(i + 1).padStart(16, "0")}`,
+      item: null,
+    };
+  }
+  const rel = `priors/${wave}/swarm-registry.json`;
+  const abs = path.join(SCRATCH_ROOT, rel);
+  mkdirSync(path.dirname(abs), { recursive: true });
+  writeFileSync(abs, `${JSON.stringify({
+    schema: "ufo-swarm-registry-v1",
+    wave: `${wave}-priors`,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    reportDir: `priors/${wave}`,
+    members,
+  }, null, 1)}\n`, "utf8");
+  return { rel, abs, ids: Object.values(members).map((member) => member.agentId), names: Object.keys(members) };
+}
+
 // ── step 6: negative assertions ────────────────────────────────────────────
 function negatives(band, admitted) {
-  rule("6/8  negatives — the floor bites, resumes are exempt, families are counted");
+  rule("6/8  negatives — the band edges, the resume exemption, the route families");
 
-  // 6a: the band edges bite, each with its own typed code — one lane below the
-  // floor, one above the wave ceiling, one above the hard member cap. Never a
-  // silent pass and never a different code.
-  const bandEdgeCases = [
-    [band.expected.waveMinLanes - 1, "too_few_lanes"],
-    [band.expected.waveMaxLanes + 1, "wave_too_wide"],
-    [HARD_CEILING + 1, "too_many_lanes"],
-  ];
-  for (const [lanes, code] of bandEdgeCases) {
-    const specPath = specFile(`spec-${lanes}.json`,
-      buildSpec(lanes, MIXED_ROLES, `sighting-wave-refusal-${lanes}`, "Never dispatched: this spec exists to prove the band refuses it."));
-    const refused = waveCli("plan", specPath, [], band.env);
-    writeEvidence(`refusal-${lanes}.json`, refused.raw);
-    check(`negative.band.${code}.${lanes}`, refused.status === 1 && refused.json?.code === code,
-      `a ${lanes}-lane spec exits ${refused.status} as ${refused.json?.code ?? "<unparseable>"}: ${refused.json?.message ?? refused.raw.slice(0, 160)}`);
+  const floor = band.expected.waveMinLanes;
+  const ceiling = band.expected.waveMaxLanes;
+  const cap = band.expected.maxLanes;
+  check("negative.bandShape", floor >= 1 && floor < ceiling && ceiling <= cap && cap <= HARD_CEILING,
+    `the band resolved from the ${band.mode} authority is coherent: floor ${floor} < wave ceiling ${ceiling} <= cap ${cap} <= hard ceiling ${HARD_CEILING}`);
+
+  // The file's own directive constants must agree with the band authority it was
+  // handed. The cap half is the load-bearing one (a delta cap tightened to 99
+  // flips this check alone); the floor half is backstopped upstream by the apply
+  // dry run's own hardcoded 16-lane probe, which refuses any delta floor other
+  // than the directive's before section 6 is reached — a floor drift is caught,
+  // just earlier and by a different gate.
+  check("negative.authorityConstants", FLOOR_LANES === floor && HARD_CEILING === cap,
+    `the directive constants agree with the ${band.mode} authority: FLOOR_LANES ${FLOOR_LANES} == floor ${floor}, HARD_CEILING ${HARD_CEILING} == cap ${cap} (the cap half is the one no earlier gate covers)`);
+
+  // 6a: the spawn-wave size matrix. Every cell asserts exactly what the band's
+  // own arithmetic predicts, so floor, wave ceiling and cap are all pinned by
+  // observation — including 100 lanes, which the wave ceiling refuses even
+  // though it sits exactly on the "up to 100 per round" cap.
+  const sizeMatrix = [...new Set([floor - 1, floor, floor + 1, ceiling, ceiling + 1, cap, cap + 1])]
+    .filter((lanes) => lanes >= 1)
+    .sort((a, b) => a - b);
+  for (const lanes of sizeMatrix) {
+    const code = bandVerdict(lanes, band);
+    const specPath = specFile(`spec-band-${lanes}.json`, bandSpec(lanes, `sighting-wave-band-${lanes}`));
+    const result = planCase(`band-${lanes}.json`, specPath, band);
+    if (code === null) {
+      admission(`negative.band.admits.${lanes}`, result, { spawn: lanes, resume: 0, total: lanes },
+        `${lanes} lanes sits inside ${floor}-${ceiling} and plans clean — nothing was dispatched`);
+    } else {
+      refusal(`negative.band.${code}.${lanes}`, result, code,
+        `a ${lanes}-lane spawn wave is refused as the band's arithmetic predicts (floor ${floor}, wave ceiling ${ceiling}, cap ${cap})`);
+    }
   }
 
-  // 6c: the band boundaries from the inside — the same spec shape at exactly
-  // the floor and at exactly the wave ceiling is admitted, so the refusals
-  // above are the band edges and not a broken spec builder.
-  const admittedAgain = waveCli("plan", admitted.specPath, [], band.env);
-  check("negative.floorAdmits", admittedAgain.status === 0,
-    `${opts.lanes} lanes (exactly the floor) plans clean, exit 0 — nothing was dispatched`);
-  const ceilingLanes = band.expected.waveMaxLanes;
-  const ceilingSpecPath = specFile(`spec-ceiling-${ceilingLanes}.json`,
-    buildSpec(ceilingLanes, MIXED_ROLES, `sighting-wave-ceiling-${ceilingLanes}`, "Never dispatched: this spec exists to prove the wave ceiling admits it."));
-  const admittedCeiling = waveCli("plan", ceilingSpecPath, [], band.env);
-  check("negative.ceilingAdmits", admittedCeiling.status === 0,
-    `${ceilingLanes} lanes (exactly the wave ceiling) plans clean, exit 0 — nothing was dispatched`);
+  // 6b: the per-spec cap. It may only tighten, and it is judged before the wave
+  // ceiling — so a cap pinched below the policy ceiling refuses the lane count
+  // as too_many_lanes (the cap is the tighter bound), while a cap declared above
+  // the wave ceiling still refuses the wave as wave_too_wide: the cap never
+  // widens one wave. A cap below the floor makes the band unreachable, and
+  // feasibility is judged before both size checks.
+  const capMatrix = [
+    { lanes: floor, maxLanes: floor - 1, code: "impossible_band",
+      why: `cap ${floor - 1} < floor ${floor}: no spawn wave can satisfy the band, and feasibility is judged first` },
+    { lanes: floor - 1, maxLanes: floor, code: "too_few_lanes",
+      why: `cap ${floor} == floor: the band is reachable, so the short lane count is the refusal` },
+    { lanes: ceiling + 1, maxLanes: ceiling + 1, code: "wave_too_wide",
+      why: `a cap declared at ${ceiling + 1} does not widen the wave ceiling: ${ceiling + 1} lanes is still one wave too many` },
+    { lanes: cap, maxLanes: cap - 1, code: "too_many_lanes",
+      why: `a cap tightened to ${cap - 1} refuses the ${cap} lanes the policy cap would have admitted — the cap is judged before the wave ceiling` },
+  ];
+  for (const { lanes, maxLanes, code, why } of capMatrix) {
+    const specPath = specFile(`spec-cap-${maxLanes}x${lanes}.json`, bandSpec(lanes, `sighting-wave-cap-${maxLanes}x${lanes}`, maxLanes));
+    refusal(`negative.cap.${code}.${maxLanes}x${lanes}`, planCase(`cap-${maxLanes}x${lanes}.json`, specPath, band), code, why);
+  }
+  const tightPath = specFile("spec-cap-tight.json", bandSpec(ceiling, "sighting-wave-cap-tight", ceiling));
+  const tight = planCase("cap-tight.json", tightPath, band);
+  admission(`negative.cap.admits.${ceiling}x${ceiling}`, tight, { spawn: ceiling, resume: 0, total: ceiling },
+    `a spec cap exactly at the wave ceiling still admits ${ceiling} lanes`);
+  check("negative.cap.echo", tight.json?.policy?.maxLanes === ceiling && tight.json?.policy?.declaredMaxLanes === ceiling,
+    `the plan echoes both caps: policy.maxLanes ${tight.json?.policy?.maxLanes}, declaredMaxLanes ${tight.json?.policy?.declaredMaxLanes}`);
 
-  // 6d: a resume-only wave is floor-exempt. It needs an owned member, so
-  // `record` first fills one spawn row with a SYNTHETIC agent id; a real wave
-  // records the ids the task call returned. Plan only — no dispatch, no send.
-  const syntheticAgent = "agent-dryrun0000000001";
-  const registryRel = admitted.registryRel;
-  const memberName = Object.keys(admitted.payload?.taskCall?.tasks ?? {}).length > 0
-    ? admitted.payload.taskCall.tasks[0].name
-    : null;
-  if (memberName === null) gate("negative.resume", "no member name to resume");
+  // A declared cap above the policy cap is clamped, never widened: the effective
+  // cap stays at the policy's while the declaration is recorded as unapplied.
+  const widenPath = specFile("spec-cap-widen.json", bandSpec(ceiling, "sighting-wave-cap-widen", cap + 1));
+  const widen = planCase("cap-widen.json", widenPath, band);
+  const widenCounts = widen.json?.counts ?? null;
+  check("negative.cap.tightenOnly", widen.status === 0 && widenCounts?.spawn === ceiling && widenCounts?.total === ceiling
+    && widen.json?.policy?.maxLanes === cap && widen.json?.policy?.declaredMaxLanes === cap + 1,
+    `a declared cap of ${cap + 1} cannot widen the ${cap}-lane policy cap: exit ${widen.status}, counts ${JSON.stringify(widenCounts)}, policy.maxLanes ${widen.json?.policy?.maxLanes}, declaredMaxLanes ${widen.json?.policy?.declaredMaxLanes}`);
+
+  // 6d — the resume exemption, probed against the band it is exempt from. Every
+  // spawn row of the admitted wave first receives a SYNTHETIC handle (a live run
+  // records the ids the task call returned), and a second registry fixture is
+  // sized past one legal wave so the exemption can be probed ABOVE the ceiling
+  // too, not just below the floor. Plan and run only — no dispatch, no hub send.
+  const memberNames = (admitted.payload?.taskCall?.tasks ?? []).map((task) => task.name);
+  if (memberNames.length === 0) gate("negative.resume", "the admitted payload has no spawn lane to own a handle");
+  const synthetic = memberNames.map((name, i) => [name, `agent-dryrun${String(i + 1).padStart(16, "0")}`]);
+  const syntheticAgent = synthetic[0][1];
   const recorded = run(process.execPath, [
     WAVE_CLI, "record",
-    "--registry", registryRel,
-    "--assignments", JSON.stringify({ [memberName]: syntheticAgent }),
+    "--registry", admitted.registryRel,
+    "--assignments", JSON.stringify(Object.fromEntries(synthetic)),
   ], { env: plannerEnv(band.env) });
   writeEvidence("record-synthetic.stdout.json", recorded.stdout || recorded.stderr);
   check("negative.record", recorded.status === 0,
-    `record filled ${memberName} → ${syntheticAgent} (synthetic id; a live run records the ids the task call returns)`);
+    `record filled ${synthetic.length} members with synthetic handles (a live run records the ids the task call returned)`);
 
-  const resumeSpec = specFile("spec-resume-only.json", {
-    wave: `${WAVE_NAME}-resume`,
-    priorRegistry: registryRel,
-    items: [{ resume: syntheticAgent, message: "Continue your assigned smoke-test lane and report the one fact you observed." }],
-  });
-  const resumed = waveCli("plan", resumeSpec, [], band.env);
-  writeEvidence("plan-resume-only.json", resumed.stdout || resumed.raw);
-  check("negative.resumeFloorExempt", resumed.status === 0 && resumed.json?.counts?.resume === 1 && resumed.json?.counts?.spawn === 0,
-    `a 1-lane resume-only wave plans clean under the ${band.expected.waveMinLanes}-lane floor (counts ${JSON.stringify(resumed.json?.counts ?? null)}) — resumes are continuity, not a new wave`);
-  const resumeLane = resumed.json?.tasks?.[0] ?? null;
-  check("negative.resumeNoGodspeed", resumeLane !== null && !GODSPEED_LEADING.test(resumeLane.message ?? ""),
+  const priors = priorsFixture(cap + 1, WAVE_NAME);
+  ok("negative.priors", `a ${priors.ids.length}-member fixture registry (wider than any one legal wave) is the owned-handle pool for the resume shapes above the ceiling — ${displayPath(priors.abs)}`);
+
+  /** A resume-only spec of `n` lanes drawn from the fixture registry. */
+  const resumeOnlySpec = (n, wave, maxLanes) => {
+    const spec = {
+      wave,
+      priorRegistry: priors.rel,
+      items: priors.ids.slice(0, n).map((id, i) => ({
+        resume: id,
+        message: `Resume smoke-test lane ${i + 1} of ${n}: continue your assigned lane and report the one observable fact you recorded.`,
+      })),
+    };
+    if (maxLanes !== undefined) spec.maxLanes = maxLanes;
+    return spec;
+  };
+
+  // The exemption is from the band, never from the cap: below the floor and
+  // above the wave ceiling are both admitted, one lane past the cap is not.
+  const resumeCases = [
+    { lanes: floor - 1, admit: true, why: `below the ${floor}-lane floor` },
+    { lanes: ceiling + 1, admit: true, why: `above the ${ceiling}-lane wave ceiling` },
+    { lanes: cap + 1, admit: false, code: "too_many_lanes", why: `one lane past the ${cap}-lane cap` },
+  ];
+  for (const { lanes, admit, code, why } of resumeCases) {
+    if (lanes > priors.ids.length) {
+      check(`negative.resume.pool.${lanes}`, false, `the fixture registry holds ${priors.ids.length} handles, short of the ${lanes} this case needs`);
+      continue;
+    }
+    const specPath = specFile(`spec-resume-only-${lanes}.json`, resumeOnlySpec(lanes, `${WAVE_NAME}-resume-${lanes}`));
+    const result = planCase(`resume-only-${lanes}.json`, specPath, band);
+    if (admit) {
+      admission(`negative.resume.floorExempt.${lanes}`, result, { spawn: 0, resume: lanes, total: lanes },
+        `a ${lanes}-lane resume-only wave is admitted with zero spawn lanes — ${why}, and resumes are continuity rather than a new wave`);
+    } else {
+      refusal(`negative.resume.capBinds.${lanes}`, result, code,
+        `the exemption is from the band only: ${lanes} resume lanes are still refused — ${why}`);
+    }
+  }
+
+  // A resume lane keeps the member's identity: the plan row is kind "resume"
+  // with a null handle and the ORIGINAL member name, because the handle binds at
+  // record time, never at plan time.
+  const onePath = specFile("spec-resume-only.json", resumeOnlySpec(1, `${WAVE_NAME}-resume`));
+  const one = planCase("plan-resume-only.json", onePath, band);
+  admission("negative.resume.one", one, { spawn: 0, resume: 1, total: 1 }, `one resume lane is admitted far below the ${floor}-lane floor`);
+  const oneRows = Object.entries(one.json?.registry?.members ?? {});
+  check("negative.resume.identity", oneRows.length === 1 && oneRows[0][1].kind === "resume"
+    && oneRows[0][1].agentId === null && oneRows[0][1].member === priors.names[0],
+    `the resume row is ${JSON.stringify(oneRows[0]?.[1] ?? null)} — kind "resume", a null handle, and the original member name ${JSON.stringify(priors.names[0])}`);
+  const resumeLane = one.json?.tasks?.[0] ?? null;
+  check("negative.resumeNoGodspeed", resumeLane !== null && godspeedInvocations(resumeLane.message) === 0,
     "the resume message carries no /skill:godspeed invocation — a resumed lane keeps its session, and a stacked invocation would reach it twice");
+
+  // The resume-only dispatch shape: no task call at all, one hub send per lane.
+  const resumeRun = waveCli("run", onePath, [], band.env);
+  writeEvidence("run-resume-only.json", resumeRun.raw || "<empty stdout and stderr>\n");
+  const resumePayload = resumeRun.json;
+  check("negative.resume.taskCallNull", resumeRun.status === 0 && resumePayload !== null && "taskCall" in resumePayload && resumePayload.taskCall === null,
+    `run exits ${resumeRun.status} with taskCall ${JSON.stringify(resumePayload?.taskCall)} — a resume-only wave issues no task call`);
+  const sends = resumePayload?.resumeSends ?? [];
+  check("negative.resume.sends", sends.length === 1 && sends[0]?.resume === priors.ids[0]
+    && typeof sends[0]?.message === "string" && godspeedInvocations(sends[0].message) === 0,
+    `one hub send bound to ${JSON.stringify(sends[0]?.resume ?? null)} with a ${(sends[0]?.message ?? "").length}-byte message and no godspeed invocation (keys ${JSON.stringify(Object.keys(sends[0] ?? {}).sort())})`);
+
+  // A wave carrying even one spawn lane is a spawn wave: its TOTAL (spawn +
+  // resumes) must satisfy the band, which is what makes "resume-only" the exact
+  // shape of the exemption.
+  const mixedCases = [
+    { spawns: 1, resumes: floor - 2, code: "too_few_lanes" },
+    { spawns: 1, resumes: floor - 1, code: null },
+  ];
+  for (const { spawns, resumes, code } of mixedCases) {
+    const total = spawns + resumes;
+    const spec = {
+      wave: `${WAVE_NAME}-mixed-${total}`,
+      priorRegistry: priors.rel,
+      items: [
+        ...Array.from({ length: spawns }, (_, i) => ({ role: "scout", prompt: `Mixed smoke-test spawn lane ${i + 1} of ${spawns}: report one observable fact.` })),
+        ...priors.ids.slice(0, resumes).map((id, i) => ({ resume: id, message: `Mixed smoke-test resume lane ${i + 1} of ${resumes}: continue your lane.` })),
+      ],
+    };
+    const specPath = specFile(`spec-mixed-${total}.json`, spec);
+    const result = planCase(`mixed-${total}.json`, specPath, band);
+    if (code === null) {
+      admission(`negative.mixed.admits.${total}`, result, { spawn: spawns, resume: resumes, total },
+        `${spawns} spawn + ${resumes} resumes = ${total} is admitted: resumes count toward the band of a spawn wave`);
+    } else {
+      refusal(`negative.mixed.${code}.${total}`, result, code,
+        `${spawns} spawn + ${resumes} resumes = ${total} is refused: with a spawn lane present the floor is enforced on the total, not on the spawn count`);
+    }
+  }
+
+  // The per-spec cap still binds a resume-only wave, so the exemption is exactly
+  // the 16-32 band and nothing else: cap 1 refuses 2 resume lanes.
+  const capPath = specFile("spec-resume-cap.json", resumeOnlySpec(2, `${WAVE_NAME}-resume-cap`, 1));
+  refusal("negative.resume.specCap", planCase("resume-cap.json", capPath, band), "too_many_lanes",
+    "a per-spec cap of 1 refuses 2 resume lanes — the cap is not part of the band exemption");
+
+  // The one lane count where the clamp itself decides admission: a resume-only
+  // wave one lane past the cap that declares its own cap high enough to admit
+  // itself. The wave ceiling never applies to a resume-only wave, so the clamp
+  // is the only guard left — a planner that widened on a declaration would admit
+  // this wave, and nothing else in the suite would notice.
+  const widenResumePath = specFile("spec-resume-widen.json", resumeOnlySpec(cap + 1, `${WAVE_NAME}-resume-widen`, cap + 1));
+  refusal("negative.resume.widenRefused", planCase("resume-widen.json", widenResumePath, band), "too_many_lanes",
+    `a resume-only wave of ${cap + 1} lanes declaring its own cap of ${cap + 1} is still refused by the clamped ${cap}-lane policy cap`);
 
   // 6e: the rest of the typed refusal vocabulary the smoke procedure documents.
   // Each case is a spec the planner must refuse with an exact code — a refusal
@@ -698,14 +957,39 @@ function negatives(band, admitted) {
         items: [{ resume: syntheticAgent, role: "scout", message: "Refusal probe: role on a resume." }],
       }),
     },
+    {
+      id: "resume_item_forbidden",
+      why: "a resume re-declaring the member's item would fork the partition the spawn bound",
+      spec: () => ({
+        wave: `${WAVE_NAME}-resumeitem`,
+        priorRegistry: admitted.registryRel,
+        items: [{ resume: syntheticAgent, item: "Refusal probe: item on a resume.", message: "Refusal probe: item on a resume." }],
+      }),
+    },
+    {
+      id: "resume_meta_forbidden",
+      why: "axes/milestone bind at spawn, so re-declaring them on a wake would fork the judgment contract",
+      spec: () => ({
+        wave: `${WAVE_NAME}-resumemeta`,
+        priorRegistry: admitted.registryRel,
+        items: [{ resume: syntheticAgent, axes: ["coverage"], message: "Refusal probe: axes on a resume." }],
+      }),
+    },
   ];
   for (const testCase of refusalCases) {
     const casePath = specFile(`refusals/${testCase.id}.json`, testCase.spec());
-    const refused = waveCli("plan", casePath, [], band.env);
-    writeEvidence(`refusals/${testCase.id}.output.json`, refused.raw);
-    check(`negative.refusal.${testCase.id}`, refused.status === 1 && refused.json?.code === testCase.id,
-      `${testCase.id}: exit ${refused.status}, code ${JSON.stringify(refused.json?.code ?? null)} — ${testCase.why}`);
+    refusal(`negative.refusal.${testCase.id}`, planCase(`refusals/${testCase.id}.output.json`, casePath, band), testCase.id, testCase.why);
   }
+
+  // The admitted wave's own registry is the record path's live shape: `record`
+  // just filled it with synthetic handles above, so its rows must now carry them
+  // (the `run.registryMembers` claim below is the null-handle half of this).
+  const filled = parseJson(readFileSync(admitted.registryAbs, "utf8"), "negative.registryFilled");
+  const filledRows = Object.entries(filled?.members ?? {});
+  const assigned = new Map(synthetic);
+  check("negative.registryFilled", recorded.status === 0 && filledRows.length === synthetic.length
+    && filledRows.every(([name, row]) => row.agentId === assigned.get(name)),
+    `record exited ${recorded.status} and wrote the handle it was handed into each of the ${filledRows.length} rows (want ${synthetic.length}) — the registry is the resume authority a later wave names`);
 
   // 6f: route-family concentration is asserted in routeFamilies(), which needs
   // the async module boundary — see main().
@@ -715,10 +999,8 @@ async function routeFamilies(band, admitted) {
   const mod = waveMod;
   const routingOptions = { path: CANDIDATE_GLOBAL_CONFIG };
   const reports = {};
+  const ceiling = band.expected.waveMaxLanes;
 
-  const fastSpec = buildSpec(opts.lanes, SINGLE_FAMILY_ROLES, `sighting-wave-single-family-${opts.lanes}`,
-    "Never dispatched: this spec exists to prove the route preflight flags a one-family wave.");
-  const fastSpecPath = specFile(`spec-single-family-${opts.lanes}.json`, fastSpec);
   // In-process planSwarmWave would otherwise read the live config's band, which
   // is not the band under test until the apply lands. Judge with the resolved
   // band explicitly, the same injected-policy mechanism apply.mjs uses.
@@ -729,10 +1011,16 @@ async function routeFamilies(band, admitted) {
     waveMinLanes: band.expected.waveMinLanes,
     waveMaxLanes: band.expected.waveMaxLanes,
   };
-  const mixedPlan = mod.planSwarmWave(JSON.parse(readFileSync(admitted.specPath, "utf8")), { policy: bandPolicy });
-  const fastPlan = mod.planSwarmWave(JSON.parse(readFileSync(fastSpecPath, "utf8")), { policy: bandPolicy });
-  const mixed = mod.waveRoutePreflight(mixedPlan, { routingOptions });
-  const fast = mod.waveRoutePreflight(fastPlan, { routingOptions });
+  // Both waves are declared AT the wave ceiling, so the concentration shapes are
+  // pinned where the band is tightest: the all-one-family death shape the
+  // preflight exists to flag, and the spread wave this smoke test dispatches.
+  const mixedSpecPath = specFile(`spec-route-mixed-${ceiling}.json`,
+    buildSpec(ceiling, MIXED_ROLES, `sighting-wave-route-mixed-${ceiling}`, "Never dispatched: the route-family concentration probe."));
+  const fastSpecPath = specFile(`spec-route-single-family-${ceiling}.json`,
+    buildSpec(ceiling, SINGLE_FAMILY_ROLES, `sighting-wave-route-single-family-${ceiling}`, "Never dispatched: the one-family concentration probe."));
+  const planOf = (specPath) => mod.planSwarmWave(JSON.parse(readFileSync(specPath, "utf8")), { policy: bandPolicy });
+  const mixed = mod.waveRoutePreflight(planOf(mixedSpecPath), { routingOptions });
+  const fast = mod.waveRoutePreflight(planOf(fastSpecPath), { routingOptions });
   reports.mixed = mixed;
   reports.singleFamily = fast;
   writeEvidenceJson("route-preflight.json", {
@@ -743,30 +1031,64 @@ async function routeFamilies(band, admitted) {
     singleFamilyWave: fast,
   });
 
+  // The expectation is recomputed from the authority the preflight itself read —
+  // the candidate seat -> alias table resolved in preflight — and grouped by the
+  // alias each lane's role lands on. Comparing observed against that is what
+  // makes these a cross-check of the report instead of a restatement of it. The
+  // family KEY is the route+chain cascade (finer than the alias), so the alias
+  // totals are compared and the family count is asserted to be at least the
+  // alias count, never assumed equal.
+  const aliasLanes = (lanes, roles) => {
+    const byAlias = new Map();
+    for (let i = 0; i < lanes; i += 1) {
+      const alias = familyOf(roles[i % roles.length]);
+      byAlias.set(alias, (byAlias.get(alias) ?? 0) + 1);
+    }
+    return byAlias;
+  };
+  const observedAliasLanes = (report) => {
+    const byAlias = new Map();
+    for (const family of report.families) byAlias.set(family.alias, (byAlias.get(family.alias) ?? 0) + family.lanes);
+    return byAlias;
+  };
+  const sameTotals = (want, got) => want.size === got.size && [...want].every(([alias, lanes]) => got.get(alias) === lanes);
+  const wantMixed = aliasLanes(ceiling, MIXED_ROLES);
+  const wantFast = aliasLanes(ceiling, SINGLE_FAMILY_ROLES);
+
   const describe = (report) => `families ${report.concentration.families}, largest ${report.concentration.largestFamilyLanes}, `
     + `pinned ${report.concentration.pinnedLanes}, aliases ${JSON.stringify(report.families.map((family) => `${family.alias}:${family.lanes}`))}`;
-  check("negative.singleFamilyFlagged", fast.concentration.singleFamily === true,
-    `an all-m_fast ${opts.lanes}-lane wave IS flagged singleFamily (${describe(fast)})`);
-  check("negative.mixedNotFlagged", mixed.concentration.singleFamily === false && mixed.concentration.families >= 2,
-    `the mixed ${opts.lanes}-lane wave is NOT singleFamily (${describe(mixed)})`);
-  check("negative.routeConfigBound", typeof mixed.config?.sha256 === "string" && mixed.config.sha256.length === 64,
-    `both reports bind the routing authority they read: ${mixed.config.path} sha256 ${mixed.config.sha256.slice(0, 16)}…`);
+  check("negative.routeFamiliesMixed", mixed.concentration.singleFamily === false
+    && sameTotals(wantMixed, observedAliasLanes(mixed))
+    && mixed.concentration.families >= wantMixed.size,
+    `the ${ceiling}-lane mixed wave is NOT singleFamily and its per-alias lane totals match the candidate seat table (${describe(mixed)}; want ${JSON.stringify([...wantMixed])})`);
+  check("negative.routeFamiliesSingle", fast.concentration.singleFamily === true && fast.concentration.families === 1
+    && fast.concentration.largestFamilyLanes === ceiling && sameTotals(wantFast, observedAliasLanes(fast)),
+    `an all-${familyOf(SINGLE_FAMILY_ROLES[0])} ${ceiling}-lane wave IS flagged singleFamily, one family of ${ceiling} lanes (${describe(fast)})`);
+  check("negative.routePinned", mixed.concentration.pinnedLanes === ceiling && mixed.unpinned.length === 0
+    && mixed.concentration.singleFamily === (wantMixed.size === 1 && ceiling > 1),
+    `${mixed.concentration.pinnedLanes}/${ceiling} lanes are pinned by the candidate config, ${mixed.unpinned.length} unpinned, and the flag follows the collapse rule (${describe(mixed)})`);
+  check("negative.routeUnprobed", mixed.status === "unprobed" && mixed.pings === 0
+    && mixed.families.every((family) => family.status === "unprobed"),
+    `with no probe the preflight records the sizing snapshot only: status ${JSON.stringify(mixed.status)}, ${mixed.pings} pings, family statuses ${JSON.stringify([...new Set(mixed.families.map((family) => family.status))])} — an absent probe never refuses`);
+  check("negative.routeConfigBound", [mixed, fast].every((report) => report.config?.sha256 === sha256File(CANDIDATE_GLOBAL_CONFIG)),
+    `both reports bind the routing authority they read: ${mixed.config?.path} sha256 ${String(mixed.config?.sha256).slice(0, 16)}… equals the candidate file on disk`);
 
-  // The operator-facing form of the same check, proved end to end: the CLI flag
+  // The operator-facing form of the same checks, proved end to end: the CLI flag
   // with a fixture HOME holding the candidate config as .omp/agent/config.yml.
   // A live run needs no override — it reads the installed authority.
   const fixtureHome = path.join(EVIDENCE, "fixture-home");
   mkdirSync(path.join(fixtureHome, ".omp", "agent"), { recursive: true });
   copyFileSync(CANDIDATE_GLOBAL_CONFIG, path.join(fixtureHome, ".omp", "agent", "config.yml"));
-  const cliFamilies = waveCli("plan", admitted.specPath, ["--route-families"], {
-    ...band.env,
-    HOME: fixtureHome,
-  });
-  writeEvidence("plan-route-families.json", cliFamilies.stdout || cliFamilies.raw);
-  check("negative.routeCli", cliFamilies.status === 0
-    && cliFamilies.json?.routePreflight?.concentration?.singleFamily === false,
-    `plan --route-families (HOME=${fixtureHome}) exits ${cliFamilies.status} and reports singleFamily `
-    + `${cliFamilies.json?.routePreflight?.concentration?.singleFamily} over ${cliFamilies.json?.routePreflight?.concentration?.families} families`);
+  for (const [id, specPath, wantSingle] of [
+    ["negative.routeCliMixed", mixedSpecPath, false],
+    ["negative.routeCliSingleFamily", fastSpecPath, true],
+  ]) {
+    const cli = waveCli("plan", specPath, ["--route-families"], { ...band.env, HOME: fixtureHome });
+    writeEvidence(`plan-route-families-${wantSingle ? "single" : "mixed"}.json`, cli.stdout || cli.raw);
+    const concentration = cli.json?.routePreflight?.concentration ?? null;
+    check(id, cli.status === 0 && concentration?.singleFamily === wantSingle,
+      `plan --route-families (HOME=${fixtureHome}) exits ${cli.status} and reports singleFamily ${concentration?.singleFamily} over ${concentration?.families} families for the ${wantSingle ? "one-family" : "mixed"} wave`);
+  }
 
   return reports;
 }
@@ -776,38 +1098,87 @@ async function bandCrossCheck(delta, admitted) {
   // The same mechanism apply.mjs's own wave gate uses: the real planner judging
   // the delta's numbers directly, independent of any config file on disk. It
   // pins host/ufo-sighting-dispatch.json as the source of the band this whole
-  // test claims.
+  // test claims, and the policy echo below is what proves the injection bound —
+  // an ignored injection would leave the ambient band in place and the matrix
+  // would judge the wrong floor.
   const mod = waveMod;
-  const postPolicy = {
+  const injected = {
     ...(admitted.plan?.policy ?? {}),
     source: "config",
     maxLanes: delta.swarm.maxLanes,
     waveMinLanes: delta.swarm.waveMinLanes,
     waveMaxLanes: delta.swarm.waveMaxLanes,
   };
-  const spec = JSON.parse(readFileSync(path.join(EVIDENCE, `spec-${opts.lanes}.json`), "utf8"));
-  const admittedPlan = mod.planSwarmWave(spec, { policy: postPolicy });
+  const planOf = (spec, policy = injected) => mod.planSwarmWave(spec, { policy });
+  const codeOf = (fn) => {
+    try {
+      fn();
+      return null;
+    } catch (error) {
+      return error?.code ?? error?.message ?? "unknown";
+    }
+  };
+  const specOf = (lanes, extra = {}) => ({
+    ...JSON.parse(JSON.stringify(buildSpec(lanes, MIXED_ROLES, `sighting-wave-crosscheck-${lanes}`, "Never dispatched: an injected-policy probe."))),
+    ...extra,
+  });
+
+  const admittedPlan = (() => {
+    try {
+      return planOf(JSON.parse(readFileSync(admitted.specPath, "utf8")));
+    } catch (error) {
+      return { error: error?.code ?? error?.message ?? "unknown" };
+    }
+  })();
+  check("crosscheck.injected", admittedPlan?.policy?.waveMinLanes === delta.swarm.waveMinLanes
+    && admittedPlan?.policy?.waveMaxLanes === delta.swarm.waveMaxLanes
+    && admittedPlan?.policy?.maxLanes === delta.swarm.maxLanes,
+    `the injected policy is what judged the plan: waveMinLanes ${admittedPlan?.policy?.waveMinLanes}, waveMaxLanes ${admittedPlan?.policy?.waveMaxLanes}, maxLanes ${admittedPlan?.policy?.maxLanes} — the delta's numbers echoed back, not the ambient config's`);
   check("crosscheck.admitted", admittedPlan?.counts?.total === opts.lanes,
-    `injected post-apply band ${postPolicy.waveMinLanes}-${postPolicy.waveMaxLanes}: planSwarmWave admits ${admittedPlan?.counts?.total} lanes`);
+    `injected post-apply band ${injected.waveMinLanes}-${injected.waveMaxLanes}: planSwarmWave admits ${admittedPlan?.counts?.total ?? JSON.stringify(admittedPlan)} lanes`);
 
-  const below = delta.swarm.waveMinLanes - 1;
-  let refusal = null;
-  try {
-    mod.planSwarmWave(buildSpec(below, MIXED_ROLES, `sighting-wave-crosscheck-${below}`, "Never dispatched."), { policy: postPolicy });
-  } catch (error) {
-    refusal = error?.code ?? error?.message ?? "unknown";
+  // The same refusals the band matrix asserts through the CLI, judged here by
+  // the delta's numbers alone — so the floor, the wave ceiling and the cap are
+  // the delta's, not a fixture artifact.
+  const matrix = [
+    [delta.swarm.waveMinLanes - 1, "too_few_lanes", `one below the delta's floor ${delta.swarm.waveMinLanes}`],
+    [delta.swarm.waveMaxLanes + 1, "wave_too_wide", `one above the delta's wave ceiling ${delta.swarm.waveMaxLanes}`],
+    [delta.swarm.maxLanes + 1, "too_many_lanes", `one above the delta's cap ${delta.swarm.maxLanes}`],
+  ];
+  for (const [lanes, code, why] of matrix) {
+    const observed = codeOf(() => planOf(specOf(lanes)));
+    check(`crosscheck.${code}.${lanes}`, observed === code,
+      `the same planner refuses ${lanes} lanes as ${JSON.stringify(observed)} — ${why}, injected into the policy rather than read from a config`);
   }
-  check("crosscheck.refused", refusal === "too_few_lanes",
-    `the same planner refuses ${below} lanes as ${JSON.stringify(refusal)} — the floor is the delta's, not a fixture artifact`);
+  const capBelowFloor = codeOf(() => planOf(specOf(delta.swarm.waveMinLanes, { maxLanes: delta.swarm.waveMinLanes - 1 })));
+  check("crosscheck.impossibleBand", capBelowFloor === "impossible_band",
+    `a spec cap below the injected floor refuses as ${JSON.stringify(capBelowFloor)} — the injected band, not a file, is the authority`);
 
-  let wideRefusal = null;
-  try {
-    mod.planSwarmWave(buildSpec(delta.swarm.waveMaxLanes + 1, MIXED_ROLES, "sighting-wave-crosscheck-wide", "Never dispatched."), { policy: postPolicy });
-  } catch (error) {
-    wideRefusal = error?.code ?? error?.message ?? "unknown";
-  }
-  check("crosscheck.waveCeiling", wideRefusal === "wave_too_wide",
-    `${delta.swarm.waveMaxLanes + 1} lanes is refused as ${JSON.stringify(wideRefusal)} — one wave carries at most ${delta.swarm.waveMaxLanes}`);
+  // The resume exemption travels with the policy too: below-floor resume-only
+  // lanes are admitted under the injected band, while the injected cap still
+  // binds them. The prior registry is a fixture sized past one legal wave, and
+  // the in-process planner resolves it against UFO_PROJECT_ROOT (declared as the
+  // scratch root in main() before this module was imported).
+  const belowFloor = delta.swarm.waveMinLanes - 1;
+  const priors = priorsFixture(delta.swarm.maxLanes + 1, `${WAVE_NAME}-crosscheck`);
+  const resumeOnly = (n, extra = {}) => ({
+    wave: `${WAVE_NAME}-crosscheck-resume-${n}`,
+    priorRegistry: priors.rel,
+    items: priors.ids.slice(0, n).map((id, i) => ({ resume: id, message: `Crosscheck resume lane ${i + 1} of ${n}: continue your lane.` })),
+    ...extra,
+  });
+  const resumed = (() => {
+    try {
+      return planOf(resumeOnly(belowFloor)).counts;
+    } catch (error) {
+      return { code: error?.code ?? error?.message ?? "unknown" };
+    }
+  })();
+  check("crosscheck.resumeFloorExempt", resumed?.spawn === 0 && resumed?.resume === belowFloor && resumed?.total === belowFloor,
+    `under the injected band ${belowFloor} resume-only lanes are admitted (counts ${JSON.stringify(resumed)}) — the below-floor exemption is the policy's, not the fixture's`);
+  const resumeCap = codeOf(() => planOf(resumeOnly(2, { maxLanes: 1 })));
+  check("crosscheck.resumeCapBinds", resumeCap === "too_many_lanes",
+    `the injected cap still binds resumes: 2 lanes at cap 1 refuse as ${JSON.stringify(resumeCap)}`);
 }
 
 // ── step 7: the wall ───────────────────────────────────────────────────────
@@ -1013,6 +1384,12 @@ async function main() {
   say(`  evidence:  ${EVIDENCE}`);
   say(`  live wall: ${opts.liveWall ? "YES — ufo-sighting verbs will run" : "no — wall commands are printed only"}`);
   mkdirSync(EVIDENCE, { recursive: true });
+  // The in-process planner resolves root-relative registry paths against
+  // UFO_PROJECT_ROOT, read when the authority module is imported — so the
+  // scratch root has to be declared before loadAuthorities(), or a resume probe
+  // would resolve its prior registry against the ufo-fsd-alpha checkout (and
+  // never find the fixture) instead of the evidence tree.
+  process.env.UFO_PROJECT_ROOT = SCRATCH_ROOT;
 
   const delta = parseJson(readFileSync(DELTA_PATH, "utf8"), "preflight.delta");
   if (!Number.isSafeInteger(delta?.swarm?.waveMinLanes)) gate("preflight.delta", "host/ufo-sighting-dispatch.json has no swarm.waveMinLanes");
