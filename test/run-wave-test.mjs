@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * run-wave-test — the automated half of the ufo-sighting 32-lane wave smoke
+ * run-wave-test — the automated half of the ufo-sighting 16-lane wave smoke
  * test. It proves every claim the live procedure in test/sighting-wave-smoke.md
  * makes about the wave planner, then STOPS at the dispatch boundary and prints
  * the exact step the operator executes by hand.
@@ -21,16 +21,16 @@
  *                  fixture config (`--band fixture`, the default, works before
  *                  the apply has landed) or the real config/ufo.json (`--band
  *                  live`, refuses with apply_not_landed while the floor is
- *                  still 16).
- *   3. spec        build the 32-lane wave spec: pairwise-distinct prompts,
+ *                  still 32).
+ *   3. spec        build the 16-lane wave spec: pairwise-distinct prompts,
  *                  explicit taxonomy roles spread over two route families.
  *   4. plan        `ufo-swarm-wave.mjs plan` — exit 0, band, counts, roles.
  *   5. run         `ufo-swarm-wave.mjs run` — the ufo-swarm-wave-dispatch-v1
- *                  payload: 32 spawn lanes, no per-lane model param,
+ *                  payload: 16 spawn lanes, no per-lane model param,
  *                  /skill:godspeed as the leading line of every spawned task,
  *                  registry persisted on disk.
- *   6. negatives   16 and 31 lanes refused too_few_lanes; 101 refused
- *                  too_many_lanes; a resume-only wave admitted below the floor
+ *   6. negatives   15 refused too_few_lanes; 33 refused wave_too_wide; 101
+ *                  refused too_many_lanes; a resume-only wave admitted below the floor
  *                  (floor-exempt) and carrying no godspeed invocation; the
  *                  refusal vocabulary (duplicate_expansion, role_required,
  *                  unknown_role, impossible_band, resume_unknown_member,
@@ -57,7 +57,7 @@
  *   node test/run-wave-test.mjs                     # dry, fixture band
  *   node test/run-wave-test.mjs --band live         # dry, real config/ufo.json
  *   node test/run-wave-test.mjs --live-wall         # also open/capture the wall
- *   node test/run-wave-test.mjs --lanes 40          # a wider wave in-band
+ *   node test/run-wave-test.mjs --lanes 24          # a wider wave in-band
  *   node test/run-wave-test.mjs --help
  *
  * Exit codes: 0 every gate passed and the run stopped at the dispatch boundary
@@ -85,18 +85,20 @@ const EVIDENCE_ROOT = path.join(TEST_DIR, "evidence");
 const DEFAULT_UFO_ROOT = "/home/vgpnk/Projects/ufo-fsd-alpha";
 const WAVE_SESSION = "ufo_sighting";
 
-// The operator directive under test: "swarm waves of 32 workers but up to 100".
-// 32 is the narrowest legal spawn wave after the apply, so it is the wave this
-// script proves admissible; 16 and 31 are the refusals that show the floor bites.
-const FLOOR_LANES = 32;
+// The operator directive under test: "dispatched in swarms of 16-32, up to
+// 100 per round". 16 is the narrowest legal spawn wave after the apply, so it
+// is the wave this script proves admissible; 15 is the refusal that shows the
+// floor bites, 33 the one that shows the wave ceiling bites, 101 the member
+// cap above the round ceiling.
+const FLOOR_LANES = 16;
 const HARD_CEILING = 100;
 
 // Two route families on purpose. Which family a role lands in is read from the
 // candidate global config at runtime (loadAuthorities), never hardcoded here:
 // on the current candidate scout+scribe+simplifier+mutation-tester resolve to
 // @m_fast and reviewer+executor+connector+sentinel+revenger to @m_mid, so a
-// wave mixing them is not a singleFamily concentration (the 16/36 and 44/48
-// death shape the route preflight exists to flag).
+// wave mixing them is not a singleFamily concentration (the all-16-in-one-
+// family and all-32-in-one-family death shapes the route preflight exists to flag).
 const MIXED_ROLES = ["scout", "reviewer", "scribe", "executor"];
 // One family only, for the negative singleFamily assertion. Never dispatched.
 const SINGLE_FAMILY_ROLES = ["scout", "scribe", "simplifier", "mutation-tester"];
@@ -147,8 +149,8 @@ const USAGE = [
   "  --ufo-root PATH   ufo-fsd-alpha checkout (default " + DEFAULT_UFO_ROOT + ")",
   "  --band MODE       fixture: synthesize the post-apply band from host/ (default)",
   "                    live: read the checkout's config/ufo.json as the band authority",
-  "                    and refuse with apply_not_landed while the floor is not 32",
-  "  --lanes N         spawn lanes for the admitted wave (default 32, band 32-100)",
+  "                    and refuse with apply_not_landed while the floor is not 16",
+  "  --lanes N         spawn lanes for the admitted wave (default 16, band 16-32)",
   "  --report-dir REL  per-lane reportDir written into the spec (relative, no '..')",
   "  --out DIR         evidence dir (default test/evidence/<stamp>)",
   "  --live-wall       open the operator wall and capture its state. WITHOUT this",
@@ -431,7 +433,7 @@ function preflight() {
   if (apply.status !== 0) {
     gate("preflight.apply", `host/apply.mjs dry run exited ${apply.status} — the candidate config is not verified, so the wave test would measure an unroutable host. Log: ${applyLog}\n  last lines:\n${apply.stdout.trim().split("\n").slice(-6).map((line) => `    ${line}`).join("\n")}`);
   }
-  ok("preflight.apply", `host/apply.mjs dry run exit 0 (resolver, route gate, replicated compile gate and its own 32-lane wave gate all pass) — log ${displayPath(applyLog)}`);
+  ok("preflight.apply", `host/apply.mjs dry run exit 0 (resolver, route gate, replicated compile gate and its own 16-32 wave-band gate all pass) — log ${displayPath(applyLog)}`);
 
   return { wallPresent, applyLog };
 }
@@ -472,7 +474,7 @@ function resolveBand(delta) {
     };
   }
 
-  // fixture: the checkout's own config with exactly the delta's five values set,
+  // fixture: the checkout's own config with exactly the delta's six values set,
   // which is the object state `apply.mjs --apply` produces. The merge is
   // in-memory and lands inside the evidence tree.
   const fixture = JSON.parse(liveRaw);
@@ -480,6 +482,7 @@ function resolveBand(delta) {
   dispatch.maxConcurrentL1 = delta.maxConcurrentL1;
   dispatch.missionFormat.l1Alias = delta.missionFormat.l1Alias;
   dispatch.swarm.maxLanes = delta.swarm.maxLanes;
+  dispatch.swarm.minLanes = delta.swarm.minLanes;
   dispatch.swarm.waveMinLanes = delta.swarm.waveMinLanes;
   dispatch.swarm.waveMaxLanes = delta.swarm.waveMaxLanes;
   writeFileSync(FIXTURE_CONFIG, `${JSON.stringify(fixture, null, 1)}\n`, "utf8");
@@ -582,23 +585,35 @@ async function planAndRun(band) {
 function negatives(band, admitted) {
   rule("6/8  negatives — the floor bites, resumes are exempt, families are counted");
 
-  // 6a/6b: below the floor. Both must die too_few_lanes with exit 1, never a
+  // 6a: the band edges bite, each with its own typed code — one lane below the
+  // floor, one above the wave ceiling, one above the hard member cap. Never a
   // silent pass and never a different code.
-  for (const lanes of [16, 31]) {
+  const bandEdgeCases = [
+    [band.expected.waveMinLanes - 1, "too_few_lanes"],
+    [band.expected.waveMaxLanes + 1, "wave_too_wide"],
+    [HARD_CEILING + 1, "too_many_lanes"],
+  ];
+  for (const [lanes, code] of bandEdgeCases) {
     const specPath = specFile(`spec-${lanes}.json`,
-      buildSpec(lanes, MIXED_ROLES, `sighting-wave-refusal-${lanes}`, "Never dispatched: this spec exists to prove the floor refuses it."));
+      buildSpec(lanes, MIXED_ROLES, `sighting-wave-refusal-${lanes}`, "Never dispatched: this spec exists to prove the band refuses it."));
     const refused = waveCli("plan", specPath, [], band.env);
     writeEvidence(`refusal-${lanes}.json`, refused.raw);
-    check(`negative.tooFew.${lanes}`, refused.status === 1 && refused.json?.code === "too_few_lanes",
+    check(`negative.band.${code}.${lanes}`, refused.status === 1 && refused.json?.code === code,
       `a ${lanes}-lane spec exits ${refused.status} as ${refused.json?.code ?? "<unparseable>"}: ${refused.json?.message ?? refused.raw.slice(0, 160)}`);
   }
 
-  // 6c: the floor boundary from the other side — the same spec shape at exactly
-  // the floor is admitted, so the refusals above are the floor and not a broken
-  // spec builder.
+  // 6c: the band boundaries from the inside — the same spec shape at exactly
+  // the floor and at exactly the wave ceiling is admitted, so the refusals
+  // above are the band edges and not a broken spec builder.
   const admittedAgain = waveCli("plan", admitted.specPath, [], band.env);
   check("negative.floorAdmits", admittedAgain.status === 0,
     `${opts.lanes} lanes (exactly the floor) plans clean, exit 0 — nothing was dispatched`);
+  const ceilingLanes = band.expected.waveMaxLanes;
+  const ceilingSpecPath = specFile(`spec-ceiling-${ceilingLanes}.json`,
+    buildSpec(ceilingLanes, MIXED_ROLES, `sighting-wave-ceiling-${ceilingLanes}`, "Never dispatched: this spec exists to prove the wave ceiling admits it."));
+  const admittedCeiling = waveCli("plan", ceilingSpecPath, [], band.env);
+  check("negative.ceilingAdmits", admittedCeiling.status === 0,
+    `${ceilingLanes} lanes (exactly the wave ceiling) plans clean, exit 0 — nothing was dispatched`);
 
   // 6d: a resume-only wave is floor-exempt. It needs an owned member, so
   // `record` first fills one spawn row with a SYNTHETIC agent id; a real wave
@@ -704,8 +719,18 @@ async function routeFamilies(band, admitted) {
   const fastSpec = buildSpec(opts.lanes, SINGLE_FAMILY_ROLES, `sighting-wave-single-family-${opts.lanes}`,
     "Never dispatched: this spec exists to prove the route preflight flags a one-family wave.");
   const fastSpecPath = specFile(`spec-single-family-${opts.lanes}.json`, fastSpec);
-  const mixedPlan = mod.planSwarmWave(JSON.parse(readFileSync(admitted.specPath, "utf8")));
-  const fastPlan = mod.planSwarmWave(JSON.parse(readFileSync(fastSpecPath, "utf8")));
+  // In-process planSwarmWave would otherwise read the live config's band, which
+  // is not the band under test until the apply lands. Judge with the resolved
+  // band explicitly, the same injected-policy mechanism apply.mjs uses.
+  const bandPolicy = {
+    ...(admitted.plan?.policy ?? {}),
+    source: "config",
+    maxLanes: band.expected.maxLanes,
+    waveMinLanes: band.expected.waveMinLanes,
+    waveMaxLanes: band.expected.waveMaxLanes,
+  };
+  const mixedPlan = mod.planSwarmWave(JSON.parse(readFileSync(admitted.specPath, "utf8")), { policy: bandPolicy });
+  const fastPlan = mod.planSwarmWave(JSON.parse(readFileSync(fastSpecPath, "utf8")), { policy: bandPolicy });
   const mixed = mod.waveRoutePreflight(mixedPlan, { routingOptions });
   const fast = mod.waveRoutePreflight(fastPlan, { routingOptions });
   reports.mixed = mixed;
@@ -775,14 +800,14 @@ async function bandCrossCheck(delta, admitted) {
   check("crosscheck.refused", refusal === "too_few_lanes",
     `the same planner refuses ${below} lanes as ${JSON.stringify(refusal)} — the floor is the delta's, not a fixture artifact`);
 
-  let ceilingRefusal = null;
+  let wideRefusal = null;
   try {
-    mod.planSwarmWave(buildSpec(HARD_CEILING + 1, MIXED_ROLES, "sighting-wave-crosscheck-over", "Never dispatched."), { policy: postPolicy });
+    mod.planSwarmWave(buildSpec(delta.swarm.waveMaxLanes + 1, MIXED_ROLES, "sighting-wave-crosscheck-wide", "Never dispatched."), { policy: postPolicy });
   } catch (error) {
-    ceilingRefusal = error?.code ?? error?.message ?? "unknown";
+    wideRefusal = error?.code ?? error?.message ?? "unknown";
   }
-  check("crosscheck.ceiling", ceilingRefusal === "too_many_lanes",
-    `${HARD_CEILING + 1} lanes is refused as ${JSON.stringify(ceilingRefusal)} — the band ceiling is ${HARD_CEILING}`);
+  check("crosscheck.waveCeiling", wideRefusal === "wave_too_wide",
+    `${delta.swarm.waveMaxLanes + 1} lanes is refused as ${JSON.stringify(wideRefusal)} — one wave carries at most ${delta.swarm.waveMaxLanes}`);
 }
 
 // ── step 7: the wall ───────────────────────────────────────────────────────
@@ -821,7 +846,7 @@ function wall(preflightState) {
       say(`      # ${command.note}`);
     }
     say("");
-    say("  Swarm lanes are NOT wall missions. A 32-lane wave shows up only as the");
+    say(`  Swarm lanes are NOT wall missions. A ${opts.lanes}-lane wave shows up only as the`);
     say("  parent mission's L2 counter (levels.l2 = unsettled task ids read from that");
     say("  session's transcript), and only when the parent session was itself launched");
     say("  or registered on the wall. L2 null with levelDetails.l2.status \"opaque\"");
@@ -874,7 +899,7 @@ function dispatchBoundary(admitted) {
     "",
     "  Nothing was dispatched. No lane was spawned, no model was called, and no",
     "  hub message was sent. The wave is validated and rendered; issuing it is a",
-    "  deliberate human step because it burns 32 lane completions.",
+    `  deliberate human step because it burns ${opts.lanes} lane completions.`,
     "",
     `  Payload:   ${admitted.payloadPath}`,
     `             (${payloadRel}, schema ufo-swarm-wave-dispatch-v1)`,
@@ -926,7 +951,7 @@ function dispatchBoundary(admitted) {
     "       wave you are testing. Probe first, then complete:",
     `       cd ${opts.ufoRoot} && bash scripts/ufo-sighting complete --mission <RUN_OR_MISSION> --dry-run`,
     `       cd ${opts.ufoRoot} && bash scripts/ufo-sighting complete --mission <RUN_OR_MISSION> \\`,
-    `         --note "32-lane sighting wave smoke: N/${opts.lanes} lanes reported"`,
+    `         --note "${opts.lanes}-lane sighting wave smoke: N/${opts.lanes} lanes reported"`,
     "       If no mission was ever registered for the parent session, there is",
     "       nothing to complete: record that honestly (MISSION_NOT_FOUND is the",
     "       expected code) rather than registering a dummy row to close it.",
@@ -980,7 +1005,7 @@ function finish(code) {
 
 // ── main ───────────────────────────────────────────────────────────────────
 async function main() {
-  say(`ufo-sighting 32-lane wave smoke test — dry half`);
+  say(`ufo-sighting ${opts.lanes}-lane wave smoke test — dry half`);
   say(`  repo:      ${REPO_ROOT}`);
   say(`  ufo root:  ${opts.ufoRoot}`);
   say(`  band mode: ${opts.band}`);

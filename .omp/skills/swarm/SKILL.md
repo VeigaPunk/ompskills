@@ -58,11 +58,12 @@ Invoke as `/skill:swarm`, `/swarm on`, `/swarm off`, or `/swarm <task>`.
    one L1, no second judge, honest evidence, and no concurrent overlapping-file
    assignments. Wave output is advisory: no lane becomes a judge verdict.
 
-The validator is normative. The configured wave band is **32–100 total members**
-(spawn lanes plus resumes counted together), from
-`sighting.dispatch.swarm.waveMinLanes`/`waveMaxLanes`; the member ceiling
-`swarm.maxLanes` is **100**, and a per-spec `maxLanes` may only tighten it,
-never widen it. `swarm.minLanes` **64** is the declared swarm-round floor —
+The validator is normative. The configured wave band is **16–32 total members**
+(spawn lanes plus resumes counted together) **per wave**, from
+`sighting.dispatch.swarm.waveMinLanes`/`waveMaxLanes`; the per-L1 member
+ceiling `swarm.maxLanes` is **100** — the round ceiling that sequential waves
+of one round share — and a per-spec `maxLanes` may only tighten it,
+never widen it. `swarm.minLanes` **16** is the declared swarm-round floor —
 policy, not a planner gate; what the planner gates is the wave band, and in a
 band-less policy the built-in minimum is **2**. Resume-only waves are exempt
 from the floor. A spec cap below the floor makes the band unreachable and fails
@@ -102,7 +103,8 @@ when `task` is in the lane's tools. `agents/executor.md` is the one card that
 permits a spawn (`labrat`), and the host's `task.maxRecursionDepth` (**2**) is
 what bounds that chain. The host's `task.maxConcurrency` (**32**) is a separate
 cap on lanes running at once; it is not the wave band and not the member
-ceiling, so a legal 100-member wave still queues behind the host window.
+ceiling — a wave at the 32-lane ceiling fills that window exactly, while lanes
+from the later waves of a 100-member round queue behind the earlier waves.
 
 ## Godspeed posture
 
