@@ -487,6 +487,7 @@ function verbLaunch(spec, authority, options) {
   mkdirSync(spec.stateDir, { recursive: true });
 
   const records = [];
+  const failures = [];
   for (const row of plan) {
     const mission = spec.missions.find((m) => m.id === row.id);
     const record = {
@@ -539,7 +540,13 @@ function verbLaunch(spec, authority, options) {
         const failure = JSON.parse(launched.stdout || launched.stderr);
         if (failure?.code) detail = `${failure.code}: ${failure.message ?? detail}`;
       } catch { /* verbatim text is the fallback detail */ }
-      typed("LAUNCH_FAILED", `wall launch failed for mission ${row.id} (exit ${launched.status}): ${detail}`);
+      // Partial-failure policy: record the failure, keep the panes already
+      // launched, and continue. The fleet state file is written either way, so
+      // an operator can see exactly which missions came up.
+      record.failure = { code: "LAUNCH_FAILED", detail };
+      failures.push({ id: row.id, detail });
+      records.push(record);
+      continue;
     }
     const result = parseJsonOutput(launched.stdout, `wall launch for ${row.id}`);
     record.launchResult = result;
@@ -552,7 +559,7 @@ function verbLaunch(spec, authority, options) {
   // 6. fleet state, written only under <stateDir>.
   const fleetPath = path.join(spec.stateDir, "fleet.json");
   writeFileSync(fleetPath, JSON.stringify({
-    ok: true,
+    ok: failures.length === 0,
     fleet: spec.fleet,
     repo: spec.repo,
     ufoRoot: spec.ufoRoot,
@@ -575,12 +582,15 @@ function verbLaunch(spec, authority, options) {
   }, null, 2) + "\n");
 
   if (options.json) {
-    emitJson({ ok: true, verb: "launch", fleet: spec.fleet, fleetStatePath: fleetPath, missions: records.map(({ launchResult, ...rest }) => ({ ...rest, launchResultRecorded: Boolean(launchResult) })) });
+    emitJson({ ok: failures.length === 0, verb: "launch", fleet: spec.fleet, fleetStatePath: fleetPath, failures, missions: records.map(({ launchResult, ...rest }) => ({ ...rest, launchResultRecorded: Boolean(launchResult) })) });
   } else {
     for (const record of records) {
       process.stdout.write(`launched ${record.id} · pane ${record.paneId ?? "?"} · worktree ${record.worktree}\n`);
     }
     process.stdout.write(`fleet state: ${fleetPath}\n`);
+  }
+  if (failures.length > 0) {
+    typed("LAUNCH_PARTIAL", `${failures.length} of ${plan.length} missions failed to launch (${failures.map((f) => f.id).join(", ")}); the panes that did launch are live and fleet state is at ${fleetPath}`);
   }
   return EXIT_OK;
 }
