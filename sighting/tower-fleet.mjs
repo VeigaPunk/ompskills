@@ -12,7 +12,7 @@
  *   node sighting/tower-fleet.mjs plan   --spec <fleet.json> [--json]
  *   node sighting/tower-fleet.mjs launch --spec <fleet.json> --apply [--json]
  *   node sighting/tower-fleet.mjs status --spec <fleet.json> [--json]
- *   node sighting/tower-fleet.mjs close  --spec <fleet.json> --apply [--mission <id>] [--json]
+ *   node sighting/tower-fleet.mjs close  --spec <fleet.json> --apply [--mission <id>] [--force] [--json]
  *
  * Default verb is `plan` (which writes nothing). `launch` and `close` refuse
  * without `--apply`. Exit codes: 0 ok · 2 typed error (`{ok:false,code,
@@ -27,7 +27,19 @@
  *   - every shell-out is `spawnSync` with an explicit argv array — no shell
  *     strings built from spec content;
  *   - the omp argv stays interactive (no `-p`/`--print`, no `--mode`), and
- *     `omp --cwd` always equals the mission cwd.
+ *     `omp --cwd` always equals the mission cwd;
+ *   - a failed mission never aborts the run: it is recorded with its typed
+ *     failure, the panes already up keep running, and fleet.json is written
+ *     either way (`ok:false`, exit 2, code LAUNCH_PARTIAL);
+ *   - relaunch is idempotent: an existing worktree, an existing prompt (byte
+ *     identical -> left untouched), and an existing wall row (the run id
+ *     stays reserved while the row exists, so a second `launch` would be a
+ *     RUN_ID_CONFLICT) are all adopted instead of recreated;
+ *   - `status` reconciles the wall against `<stateDir>/fleet.json` in both
+ *     directions and writes nothing;
+ *   - `close` refuses (PANE_LIVE) when a target's pane is still live on the
+ *     wall, unless `--force`; a mission absent from the wall is skipped, not
+ *     an error.
  *
  * Fleet spec (JSON):
  * {
@@ -71,6 +83,11 @@ const MAXTIME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:+-]*$/;
 
 const VERBS = new Set(["plan", "launch", "status", "close"]);
 
+// The wall's live phases (`statusPhase`: starting -> queued, running ->
+// working). Every other phase (suspended/completed/failed/unknown) means no
+// pane is running, so the mission is safe to complete.
+const LIVE_PHASES = new Set(["queued", "working"]);
+
 class TypedError extends Error {
   constructor(code, message) {
     super(message);
@@ -85,7 +102,7 @@ function typed(code, message) {
 function usageExit(message) {
   process.stderr.write(JSON.stringify({ ok: false, code: "USAGE", message }) + "\n");
   process.stderr.write(
-    "usage: node sighting/tower-fleet.mjs [plan|launch|status|close] --spec <fleet.json> [--apply] [--mission <id>] [--json]\n"
+    "usage: node sighting/tower-fleet.mjs [plan|launch|status|close] --spec <fleet.json> [--apply] [--mission <id>] [--force] [--json]\n"
   );
   process.exit(EXIT_USAGE);
 }
@@ -379,6 +396,56 @@ function parseJsonOutput(text, label) {
   }
 }
 
+// ── wall state: the single source of liveness ───────────────────────────────
+
+/** Read the wall's mission view once. Every verb that reasons about an
+ * existing mission (launch reuse, status reconciliation, the close guard)
+ * reads liveness here, never from the launcher's own bookkeeping. */
+function readWall(spec) {
+  const result = wallCli(spec, "status", "--lite");
+  if (result.status !== 0) {
+    typed("WALL_STATUS_FAILED", `wall status --lite exited ${result.status}: ${(result.stderr || result.stdout).slice(0, 400)}`);
+  }
+  return parseJsonOutput(result.stdout, "wall status --lite");
+}
+
+function wallRowsForFleet(spec, wall) {
+  return (wall.missions ?? []).filter((mission) => (mission.fleet ?? null) === spec.fleet);
+}
+
+function wallRowId(row) {
+  return row?.runId ?? row?.missionId ?? null;
+}
+
+/** The wall's own liveness answer. `levels.l1` is `isLiveStatus(status)` in the
+ * wall's mission view; `phase` is the same status in its five-bucket
+ * vocabulary. Prefer the numeric level, fall back to the phase. */
+function wallRowLive(row) {
+  if (row === undefined || row === null) return false;
+  const l1 = row.levels?.l1;
+  if (typeof l1 === "number") return l1 > 0;
+  return LIVE_PHASES.has(row.phase);
+}
+
+function wallRowPhase(row) {
+  return row?.phase ?? (wallRowLive(row) ? "working" : "unknown");
+}
+
+/** The state file `launch` wrote, or null when it is absent/unreadable — a
+ * missing fleet.json is exactly the divergence `status` must report, not an
+ * error. */
+function readFleetState(spec) {
+  const fleetPath = path.join(spec.stateDir, "fleet.json");
+  if (!existsSync(fleetPath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(fleetPath, "utf8"));
+    return parsed !== null && typeof parsed === "object" ? parsed : null;
+  } catch (error) {
+    warn(`fleet state ${fleetPath} is unreadable (${error.message}) — continuing without it`);
+    return null;
+  }
+}
+
 // ── verbs ───────────────────────────────────────────────────────────────────
 
 function buildPlan(spec, authority) {
@@ -479,11 +546,15 @@ function copySkill(name, spec, worktree) {
 function verbLaunch(spec, authority, options) {
   const plan = buildPlan(spec, authority);
   const wallCliPath = path.join(spec.ufoRoot, "scripts", "ufo-sighting");
-  // Open the wall once for the whole run.
+  // Open the wall once for the whole run, then read its mission view: a
+  // relaunch must adopt rows the wall already holds (the run id stays reserved
+  // while the row exists, so a second `launch` of the same id is a
+  // RUN_ID_CONFLICT, not a no-op). The decision is made from wall state.
   const opened = wallCli(spec, "open");
   if (opened.status !== 0) {
     typed("WALL_OPEN_FAILED", `bash ${wallCliPath} open exited ${opened.status}: ${(opened.stderr || opened.stdout).slice(0, 400)}`);
   }
+  const existingByRunId = new Map(wallRowsForFleet(spec, readWall(spec)).map((wallRow) => [wallRowId(wallRow), wallRow]));
   mkdirSync(spec.stateDir, { recursive: true });
 
   const records = [];
@@ -500,10 +571,15 @@ function verbLaunch(spec, authority, options) {
       promptPath: row.promptPath,
       skills: [],
       paneId: null,
+      paneReused: false,
+      panePhase: null,
+      promptReused: false,
       launchResult: null,
     };
 
     // 1. worktree — reuse an existing one with a warning, never clobber it.
+    //    A failed add is this mission's failure, not a mid-fleet abort: the
+    //    panes already up must stay recorded in fleet.json.
     if (existsSync(row.worktree)) {
       warn(`worktree ${row.worktree} already exists — reusing it as-is`);
       record.worktreeReused = true;
@@ -516,7 +592,11 @@ function verbLaunch(spec, authority, options) {
         spec.base,
       ]);
       if (added.status !== 0) {
-        typed("WORKTREE_ADD_FAILED", `omp worktree add failed for ${row.id} (exit ${added.status}): ${(added.stderr || added.stdout).slice(0, 400)}`);
+        const detail = `omp worktree add exited ${added.status}: ${(added.stderr || added.stdout).slice(0, 400)}`;
+        record.failure = { code: "WORKTREE_ADD_FAILED", detail };
+        failures.push({ id: row.id, detail });
+        records.push(record);
+        continue;
       }
     }
 
@@ -527,10 +607,31 @@ function verbLaunch(spec, authority, options) {
       record.skills.push({ name: skill, source });
     }
 
-    // 3. prompt into the state dir (+ per-mission session dir).
+    // 3. prompt into the state dir (+ per-mission session dir). Byte-identical
+    //    content is left untouched, so a relaunch neither clobbers an
+    //    operator-edited prompt nor churns the file.
     const sessionsDir = path.join(spec.stateDir, "sessions", row.id);
     mkdirSync(sessionsDir, { recursive: true });
-    writeFileSync(row.promptPath, row.prompt);
+    const existingPrompt = existsSync(row.promptPath) ? readFileSync(row.promptPath, "utf8") : null;
+    if (existingPrompt === row.prompt) {
+      record.promptReused = true;
+    } else {
+      writeFileSync(row.promptPath, row.prompt);
+    }
+
+    // 4. pane — adopt the wall row this run id already owns, else launch.
+    const existing = existingByRunId.get(row.id);
+    if (existing !== undefined) {
+      record.paneId = existing.paneId ?? null;
+      record.panePhase = wallRowPhase(existing);
+      record.paneReused = true;
+      warn(`mission ${row.id} is already on the wall (${record.panePhase}) — reusing pane ${record.paneId ?? "?"}, not relaunching`);
+      if (!existsSync(row.worktree)) {
+        warn(`mission ${row.id} reuses a wall row but its worktree ${row.worktree} is missing`);
+      }
+      records.push(record);
+      continue;
+    }
 
     // 5. launch the pane; capture the wall's JSON result.
     const launched = wallCli(spec, ...row.launchArgv.slice(2));
@@ -605,36 +706,92 @@ function roundReceipts(stateDir, missionId) {
 }
 
 function verbStatus(spec, authority, options) {
-  const result = wallCli(spec, "status", "--lite");
-  if (result.status !== 0) {
-    typed("WALL_STATUS_FAILED", `wall status --lite exited ${result.status}: ${(result.stderr || result.stdout).slice(0, 400)}`);
+  const wall = readWall(spec);
+  const wallRows = wallRowsForFleet(spec, wall);
+  const state = readFleetState(spec);
+  const stateMissions = Array.isArray(state?.missions) ? state.missions : [];
+
+  // Reconcile the wall against the state file `launch` wrote, in both
+  // directions: a mission on the wall that fleet.json never recorded, and a
+  // mission fleet.json records that the wall does not report. Status is
+  // read-only — divergences are reported, never repaired here.
+  const wallIds = new Set(wallRows.map(wallRowId));
+  const stateIds = new Set(stateMissions.map((mission) => mission.id));
+  const specIds = new Set(spec.missions.map((mission) => mission.id));
+  const onWallNotInState = wallRows.map(wallRowId).filter((id) => !stateIds.has(id));
+  const inStateNotOnWall = stateMissions.map((mission) => mission.id).filter((id) => !wallIds.has(id));
+
+  const rows = wallRows.map((row) => {
+    const id = wallRowId(row);
+    return {
+      id,
+      missionId: row.missionId ?? null,
+      title: row.title,
+      source: "wall",
+      status: wallRowPhase(row),
+      live: wallRowLive(row),
+      paneId: row.paneId ?? null,
+      inFleetState: stateIds.has(id),
+      inSpec: specIds.has(id),
+      rounds: roundReceipts(spec.stateDir, id).map((file) => path.basename(file)),
+    };
+  });
+  // Missions the state file (or, failing that, the spec) knows about but the
+  // wall does not report: never launched, or removed from the wall since.
+  const known = new Set(rows.map((row) => row.id));
+  const notOnWall = [
+    ...stateMissions.map((mission) => ({ id: mission.id, title: mission.title, failure: mission.failure?.code ?? null })),
+    ...spec.missions.map((mission) => ({ id: mission.id, title: mission.title, failure: null })),
+  ];
+  for (const mission of notOnWall) {
+    if (known.has(mission.id)) continue;
+    known.add(mission.id);
+    rows.push({
+      id: mission.id,
+      missionId: null,
+      title: mission.title,
+      source: stateIds.has(mission.id) ? "state" : "spec",
+      status: "not-on-wall",
+      live: false,
+      paneId: null,
+      inFleetState: stateIds.has(mission.id),
+      inSpec: specIds.has(mission.id),
+      failure: mission.failure,
+      rounds: roundReceipts(spec.stateDir, mission.id).map((file) => path.basename(file)),
+    });
   }
-  const wall = parseJsonOutput(result.stdout, "wall status --lite");
-  const fleetMissions = (wall.missions ?? []).filter((mission) => (mission.fleet ?? null) === spec.fleet);
-  const rows = fleetMissions.map((mission) => ({
-    id: mission.runId ?? mission.missionId,
-    missionId: mission.missionId,
-    title: mission.title,
-    status: mission.status ?? mission.phase ?? "unknown",
-    paneId: mission.paneId,
-    rounds: roundReceipts(spec.stateDir, mission.runId ?? mission.missionId).map((file) => path.basename(file)),
-  }));
-  if (rows.length < spec.missions.length) {
-    const known = new Set(rows.map((row) => row.id));
-    for (const mission of spec.missions) {
-      if (!known.has(mission.id)) rows.push({ id: mission.id, missionId: null, title: mission.title, status: "not-on-wall", paneId: null, rounds: roundReceipts(spec.stateDir, mission.id).map((file) => path.basename(file)) });
-    }
-  }
+
+  const fleetStatePath = path.join(spec.stateDir, "fleet.json");
   if (options.json) {
-    emitJson({ ok: true, verb: "status", fleet: spec.fleet, wallStatus: wall.status ?? "present", stateDir: spec.stateDir, missions: rows });
+    emitJson({
+      ok: true,
+      verb: "status",
+      fleet: spec.fleet,
+      wallStatus: wall.status ?? "present",
+      stateDir: spec.stateDir,
+      reconciliation: {
+        fleetStatePath,
+        fleetStatePresent: state !== null,
+        onWallNotInState,
+        inStateNotOnWall,
+      },
+      missions: rows,
+    });
   } else {
-    const header = ["id", "status", "paneId", "rounds"];
-    const table = rows.map((row) => [row.id, row.status, row.paneId ?? "-", row.rounds.join(",") || "-"]);
+    const header = ["id", "source", "status", "live", "paneId", "rounds"];
+    const table = rows.map((row) => [row.id, row.source, row.status, row.live ? "live" : "-", row.paneId ?? "-", row.rounds.join(",") || "-"]);
     const widths = header.map((name, i) => Math.max(name.length, ...table.map((cells) => cells[i].length), 1));
     const line = (cells) => cells.map((cell, i) => cell.padEnd(widths[i])).join("  ").trimEnd();
     process.stdout.write(`fleet ${spec.fleet} · wall ${wall.status ?? "present"} · ${rows.length} mission(s)\n`);
     process.stdout.write(line(header) + "\n");
     for (const cells of table) process.stdout.write(line(cells) + "\n");
+    if (!state) process.stdout.write(`reconcile: no fleet state at ${fleetStatePath} (launch has not run, or it was removed)\n`);
+    if (onWallNotInState.length > 0) {
+      process.stdout.write(`reconcile: on the wall but missing from fleet state: ${onWallNotInState.join(", ")}\n`);
+    }
+    if (inStateNotOnWall.length > 0) {
+      process.stdout.write(`reconcile: in fleet state but not on the wall: ${inStateNotOnWall.join(", ")}\n`);
+    }
   }
   return EXIT_OK;
 }
@@ -645,19 +802,46 @@ function verbClose(spec, authority, options) {
     targets = spec.missions.filter((mission) => mission.id === options.mission);
     if (targets.length === 0) typed("UNKNOWN_MISSION", `--mission ${options.mission} is not in fleet ${spec.fleet}`);
   }
+  // The wall is the only authority on whether a pane is live. Refuse the whole
+  // close while any target is live: completing one mission of a fleet while a
+  // sibling still runs tears the fleet apart for a mission that is not done.
+  const wallById = new Map(wallRowsForFleet(spec, readWall(spec)).map((row) => [wallRowId(row), row]));
+  const live = targets.filter((mission) => wallRowLive(wallById.get(mission.id)));
+  if (live.length > 0 && !options.force) {
+    typed("PANE_LIVE", `mission(s) ${live.map((mission) => mission.id).join(", ")} still live on the wall; refusing to complete a live mission (pass --force to complete anyway — their panes keep running)`);
+  }
+  if (live.length > 0) {
+    warn(`--force: completing live mission(s) ${live.map((mission) => mission.id).join(", ")} — their panes keep running`);
+  }
   const results = [];
   for (const mission of targets) {
+    const row = wallById.get(mission.id);
+    const worktree = path.join(spec.worktreeRoot, mission.id);
+    if (row === undefined) {
+      // Nothing on the wall to complete (a mission that never launched, or was
+      // removed). Skipping keeps close idempotent instead of failing the run.
+      warn(`mission ${mission.id} is not on the wall — nothing to complete`);
+      results.push({ id: mission.id, status: "absent", completed: false, paneLive: false, worktree });
+      continue;
+    }
+    const paneLive = wallRowLive(row);
     const completed = wallCli(spec, "complete", "--mission", mission.id, "--note", "tower-fleet close");
     const detail = (completed.stdout || completed.stderr).slice(0, 200);
     if (completed.status !== 0) {
       typed("COMPLETE_FAILED", `wall complete failed for ${mission.id} (exit ${completed.status}): ${detail}`);
     }
-    results.push({ id: mission.id, status: completed.status, worktree: path.join(spec.worktreeRoot, mission.id) });
+    results.push({ id: mission.id, status: completed.status, completed: true, paneLive, phase: wallRowPhase(row), worktree });
   }
   if (options.json) {
-    emitJson({ ok: true, verb: "close", fleet: spec.fleet, missions: results, worktreeRemoval: "manual-only" });
+    emitJson({ ok: true, verb: "close", fleet: spec.fleet, forced: Boolean(options.force), missions: results, worktreeRemoval: "manual-only" });
   } else {
-    for (const row of results) process.stdout.write(`completed wall mission ${row.id}\n`);
+    for (const row of results) {
+      if (row.completed) {
+        process.stdout.write(`completed wall mission ${row.id}${row.paneLive ? " (pane left running: --force)" : ""}\n`);
+      } else {
+        process.stdout.write(`skipped ${row.id} — not on the wall\n`);
+      }
+    }
     process.stdout.write("\nWorktrees are NEVER removed automatically. Preserve unmerged work first (inspect, then integrate or keep the branch).\n");
     process.stdout.write(`For each mission, retire its worktree by path only — never \`omp worktree clear\`:\n`);
     for (const row of results) {
@@ -676,7 +860,7 @@ function parseArgs(argv) {
     verb = args.shift();
     if (!VERBS.has(verb)) usageExit(`unknown verb ${verb}`);
   }
-  const options = { verb, spec: null, apply: false, json: false, mission: null };
+  const options = { verb, spec: null, apply: false, json: false, mission: null, force: false };
   while (args.length > 0) {
     const arg = args.shift();
     if (arg === "--spec") {
@@ -689,8 +873,10 @@ function parseArgs(argv) {
     } else if (arg === "--mission") {
       if (args.length === 0) usageExit("--mission needs an id");
       options.mission = args.shift();
+    } else if (arg === "--force") {
+      options.force = true;
     } else if (arg === "--help" || arg === "-h") {
-      process.stdout.write("usage: node sighting/tower-fleet.mjs [plan|launch|status|close] --spec <fleet.json> [--apply] [--mission <id>] [--json]\n");
+      process.stdout.write("usage: node sighting/tower-fleet.mjs [plan|launch|status|close] --spec <fleet.json> [--apply] [--mission <id>] [--force] [--json]\n");
       process.exit(EXIT_OK);
     } else {
       usageExit(`unknown argument ${arg}`);
@@ -698,6 +884,7 @@ function parseArgs(argv) {
   }
   if (options.spec === null) usageExit("--spec is required");
   if (options.mission !== null && options.verb !== "close") usageExit("--mission only applies to close");
+  if (options.force && options.verb !== "close") usageExit("--force only applies to close");
   if ((options.verb === "launch" || options.verb === "close") && !options.apply) {
     typed("MUTATION_REQUIRES_APPLY", `${options.verb} mutates the wall and the worktrees; pass --apply to confirm`);
   }
