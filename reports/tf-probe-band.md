@@ -72,6 +72,12 @@ read-only against both checkouts and wrote exactly one report file under
 | `test/tower-fleet.test.mjs` | `79f384a8cef678df` |
 | `ufo-fsd-alpha/scripts/ufo-swarm-wave.mjs` | `cd8247af7e7a9dc3…` |
 
+Verification base: `97e22a4` (worktree HEAD at mission launch). `main` advanced
+during the mission by two sibling commits — `3dee568` (launcher records partial
+launch failures instead of aborting mid-fleet) and `cc0d61f` (L1 prompt forbids
+substrate writes through symlinks — the very hazard §5 records). Neither touches
+a band number; re-diff the pins above if you re-verify against current `main`.
+
 ---
 
 ## 2. The live authority flapped — timeline (this is the mission's real finding)
