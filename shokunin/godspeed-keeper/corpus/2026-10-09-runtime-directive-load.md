@@ -13,10 +13,13 @@
   `load_from_root` (:247-262): first present wins; every later present candidate must have equal decoded
   text, else bail **`godspeed directive mirror drift`**. Judge path `load_from_trusted` (:450-467)
   bypasses `UFO_ROOT` and the bundled copy (memoized `TRUSTED_GODSPEED_CACHE`).
-- **Pin:** no compile-time digest literal anywhere in `crates/` (`grep` empty). `verify_sums_manifest`
-  (:153-219) reads the sibling `SHA256SUMS`: absent → Ok; present → fail-closed on
-  unreadable/oversized/malformed/duplicate/non-hex/non-UTF8/missing entries, recomputing vs declared at
-  :213-218. Ceilings: `MAX_DIRECTIVE_BYTES = 1<<20` (:15), `MAX_SUMS_BYTES = 64*1024` (:75).
+- **Pin:** no compile-time/Rust digest literal for the directive exists
+  anywhere in `crates/` (the bundled `godspeed-core/SHA256SUMS:1` does contain
+  the hash as manifest data). `verify_sums_manifest` (:153-219) reads the
+  sibling `SHA256SUMS`: absent → Ok; present → fail-closed on
+  unreadable/oversized/malformed/duplicate/non-hex/non-UTF8/missing entries,
+  recomputing vs declared at :213-218. Ceilings: `MAX_DIRECTIVE_BYTES = 1<<20`
+  (:15), `MAX_SUMS_BYTES = 64*1024` (:75).
   Effective digest in this tree: `db88963c…` (ssot, bundled, skills/ufo/references, `.omp` mirror, and the
   host `directive.md` all identical; manifest line `ssot/godspeed-core/SHA256SUMS:1`). The manifest also
   declares `filter.md` `ddfabdcb…` and `velocity.md` `dbd37a12…` — the runtime looks up only the loaded

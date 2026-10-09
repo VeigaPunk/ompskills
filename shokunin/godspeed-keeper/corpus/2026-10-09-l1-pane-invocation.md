@@ -10,7 +10,7 @@
 - **Fallback description** (l1-prompt.md:15-18,20-21): "The `/skill:` lines above are invocation markers.
   If they did not inject the skill bodies into this session …, read them explicitly, in this order:"
   → `skill://tower`, `skill://godspeed`, `skill://swarm`, `skill://wwkd`. A missing URI is never a gate.
-- **Prohibition rule** (l1-prompt.md:88-91, verbatim): "Never hand-write `/skill:godspeed` into the spec
+- **Prohibition rule** (`l1-prompt.md:89-91`, verbatim): "Never hand-write `/skill:godspeed` into the spec
   context or a lane prompt — the renderer leads every spawn lane with it, and a resume message must not
   carry it."
 - **`tower-fleet.mjs` carries NO godspeed logic:** `grep -n -i godspeed` → no matches (exit 1).

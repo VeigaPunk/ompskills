@@ -5,11 +5,17 @@
 
 ## Observed
 
-- Assumption falsified narrowly: 34 of 35 located copies are `db88963c…`. Exactly one diverges —
-  `docs/artifacts/public-lkg/godspeed-core/directive.md` (`dedefb146331c4999f1fda337ca69a6b0b08da8edb0240b4cc6ddbca49d86474`)
-  inserts lines 2–8: a 6-line dated provenance blockquote + one blank; all rule bytes identical.
-  It is git-tracked, **not** a sync mirror, **not** a runtime candidate (`godspeed.rs:64-70` checks
-  only `ssot/`, `skills/ufo/references/`, `godspeed-core/`), not manifest-pinned → zero runtime reach.
+- Scope-qualified census: 30 of 31 located copies under the substrate plus
+  `/home/vgpnk/.agents` are `db88963c…`; exactly one diverges —
+  `docs/artifacts/public-lkg/godspeed-core/directive.md`
+  (`dedefb146331c4999f1fda337ca69a6b0b08da8edb0240b4cc6ddbca49d86474`)
+  inserts lines 2–8: a 6-line dated provenance blockquote + one blank; all rule
+  bytes identical. A wider whole-home sweep reported 33 of 34, because it also
+  found unrelated copies under `/home/vgpnk/Projects/godspeed-core` and
+  `/home/vgpnk/Projects/myskills`; do not mix the scopes.
+- The public-LKG copy is git-tracked, **not** a sync mirror, **not** a runtime
+  candidate (`godspeed.rs:64-70` checks only `ssot/`, `skills/ufo/references/`,
+  `godspeed-core/`), and not manifest-pinned → zero runtime reach.
 - Manifests: `ssot/godspeed-core` `sha256sum -c` exit 0; `skills/SHA256SUMS` exit 0 (15/15, pins both
   `directive.md` copies at `db88963c`); root `godspeed-core/SHA256SUMS` exit 0 (differs from ssot only on
   filter/velocity lines — documented vendored-vs-annotated lineage); bundled `SHA256SUMS` byte-identical

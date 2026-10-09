@@ -26,8 +26,11 @@
   (:1900-1907), agent pass (:1908-1919), bundled-config (:1920-1924), godspeed-directive-mirror
   (:1926-1932), bundled-asset-mirror (:1933-1939), dep-closure (:1940-1947). Gate:
   `node scripts/sync-ufo-contracts.mjs --check` (read-only, exits 1 on drift).
-- **Not mirrors:** root `godspeed-core/**`, `skills/godspeed-core/**`, `skills/godspeed/**`,
-  `docs/artifacts/public-lkg/godspeed-core/**` (dated artifact; directive hash `dedefb14…` ≠ ssot).
+- **Not mirrors in their entirety:** the root `godspeed-core/**`, `skills/godspeed-core/**`,
+  and `skills/godspeed/**` trees contain both declared mirror files (notably
+  `directive.md`, explicitly listed at `sync-ufo-contracts.mjs:104-110`) and
+  unmanaged sibling files. The dated `docs/artifacts/public-lkg/godspeed-core/**`
+  tree is outside the sync map; its directive hash `dedefb14…` ≠ ssot.
 - **`--check` run (read-only, observed):** exit 1, `missing` 18 — all from two undeclared-on-disk `.devin`
   targets; `drifted`: `bundled/omp-seat-routing.json`, `bundled/config.json`; extras 0; validationErrors 0;
   **no godspeed-mirror drift**; `skillsSums` ok. Non-godspeed failures (surface digest drift, seat

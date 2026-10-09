@@ -20,9 +20,10 @@ sources.
   R3a missing/undeclared/non-finite score → `RejectMalformed` ("a missing or undeclared axis is not
   'unchanged'"); R3b UNKNOWN on a blocking axis → `RejectInsufficientEvidence`, caller-constructed only,
   **downgrading an otherwise-Admit** (`loop_driver_judge.rs:352-361`); R3c UNKNOWN clamps to a 0.0 delta
-  ("never regression cover and never a phantom gain", `axis_checks.rs:12-16,365-366`) → `RejectNoImprovement`;
-  R3d subjective one-sided claim clamped+flagged. Blocking set is broader than `material:true`: every
-  evidence axis and non-finite computed deltas also block (`axis_checks.rs:370-374`).
+  ("never regression cover and never a phantom gain", `axis_checks.rs:12-16,365-366`) and may lead to
+  `RejectNoImprovement`, but caller precedence can instead produce `RejectInsufficientEvidence` or
+  `RejectRegression`; R3d subjective one-sided claim clamped+flagged. Blocking set is broader than
+  `material:true`: every evidence axis and non-finite computed deltas also block (`axis_checks.rs:370-374`).
 - **Accept/reject test** (`gate.rs:155-163`): regressed non-empty → `RejectRegression` (first); improved
   empty → `RejectNoImprovement`; else `Admit{improved}`. filter.md:36-38 pseudocode; **trap:** filter.md:48
   prose contradicts its own pseudocode — the bridge note (:62) rules single-axis-no-regression passes. The

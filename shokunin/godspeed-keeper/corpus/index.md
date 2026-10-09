@@ -37,3 +37,4 @@ lines). Seeded from mission `godspeed-keeper` round-1 research wave (22 lanes,
 | 2026-10-09-l1-pane-invocation.md | template authors the L1 bytes; `tower-fleet.mjs` has zero godspeed logic | 2026-10-09 |
 | 2026-10-09-axes-admission.md | axis set, unmeasured=fail-closed paths, accept/reject test, re-score semantics | 2026-10-09 |
 | 2026-10-09-verify-resolved-skill.md | re-verification: host `1d616723…` (869 B) resolves, substrate `c0d2232a…` (1242 B) does not; no project-scope godspeed skill | 2026-10-09 |
+| 2026-10-09-r2-adversarial-audit.md | 18-lane falsification audit; corrected census scope, mirror classification, manifest-pin wording, anchors, UNKNOWN precedence, composition conditional, and consumer rules | 2026-10-09 |

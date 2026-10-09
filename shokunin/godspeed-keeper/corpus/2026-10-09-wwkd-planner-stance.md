@@ -6,7 +6,7 @@ twins at `.cursor/skills/wwkd/SKILL.md` and `crates/ufo-core-runtime/bundled/ski
 
 ## Observed
 
-- Framing (:19): "Planning is a disciplined response to silent failure. The cheapest bugs to fix are the
+- Framing (:18-19): "Planning is a disciplined response to silent failure. The cheapest bugs to fix are the
   ones you catch before the next layer lands on top."
 - 10 core principles (:30-75): become one with the data; build a trusted skeleton; overfit one case;
   regularize in least-disruption order; tune only after correctness; code ephemeral / knowledge permanent;
@@ -22,8 +22,9 @@ twins at `.cursor/skills/wwkd/SKILL.md` and `crates/ufo-core-runtime/bundled/ski
 - "When To Use" (:198-210): approved spec needs a plan; `/wwkd` / "what would karpathy do"; non-trivial
   feature sequencing; silent-failure refactors. Not for one-line changes, in-flux specs, or throwaway glue.
 - Source Excerpts (:222-232): two Karpathy quotes, then the third, attributed verbatim (:231) to
-  **"VeigaPunk directive, the Pareto-walk compression of the same posture"** — line-for-line the godspeed
-  directive's four rules (`ssot/godspeed-core/directive.md:3-6`).
+  **"VeigaPunk directive, the Pareto-walk compression of the same posture"** — the same four rules, in
+  order, as a comma-joined clause, but **not byte-identical** to `ssot/godspeed-core/directive.md:3-6`
+  (ordinals/markdown emphasis/capitalization/punctuation differ).
 - Framework binding: run-logic:10 "Posture: godspeed. Planner stance: wwkd."; §5 at run-logic:946
   (`fn wwkd_plan`); the ssot README labels the four rules and traces lineage to Karpathy ("overfit one
   batch first").

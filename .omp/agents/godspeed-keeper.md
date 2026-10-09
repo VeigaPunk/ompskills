@@ -84,12 +84,12 @@ structural, and a keeper reports it rather than trusting the host to be current.
 
 - **Wave renderer** (`ufo-swarm-wave.mjs`). Per-spawn-lane composition order is
   fixed: base lane text → `laneBindingSuffix` (leaf bound first, then
-  `Judged on:` / `Milestone:` if declared) → `reportInstruction` → a single
-  leading `GODSPEED_INVOCATION` prepend (only when
-  `opensWithGodspeedInvocation(text)` is false). `checkComposedText` runs the
-  64 KiB `MAX_PROMPT_BYTES` bound **before** the envelope check. The compact
-  (template-hoist) emission mirrors the order exactly. There is no per-lane
-  model knob.
+  `Judged on:` / `Milestone:` if declared) → `reportInstruction` **when
+  `reportDir !== null`** → a single leading `GODSPEED_INVOCATION` prepend (only
+  when `opensWithGodspeedInvocation(text)` is false). `checkComposedText` runs
+  the 64 KiB `MAX_PROMPT_BYTES` bound **before** the envelope check. The
+  compact (template-hoist) emission mirrors the order exactly. There is no
+  per-lane model knob.
 - **Dispatch hook** (`ufo-godspeed-inject.js`). Default factory
   `ufoGodspeedInject(pi)` labels `uf0 godspeed inject` and registers exactly one
   `pi.on("tool_call", …)`. Gate: `event?.toolName !== "task"` → return. Batched
@@ -129,13 +129,14 @@ refuses a second or a nonterminal occurrence with typed `invalid_spec`
 strip; `appendReportSuffix` exists so the report instruction lands *inside* the
 envelope instead of stranding a terminal marker.
 
-The consumers do **not** share one rule. `run-omp-native-trial`,
-`ufo-swarm-wave` and the collector's `splitGodspeedEnvelope` require exactly one
-terminal marker; `fleet-dispatcher` alone deliberately accepts mid-body prose
-that quotes the marker before a terminal one. Consequence to state, not smooth:
-**a prompt that dispatches cleanly can still die at the collector/judge** — so
-never phrase the contract to an author as plain "exactly one terminal marker"
-for all consumers.
+The consumers do **not** share one rule. `run-omp-native-trial` and the
+collector require exactly one terminal marker; `ufo-swarm-wave` requires at
+most one, terminal (zero is legal); `fleet-dispatcher` alone deliberately
+accepts mid-body prose that quotes the marker before a terminal one. A prompt
+accepted by that dispatcher carve-out is refused by the trial's assignment
+check at launch (and by the wave's lane check); the collector and judge enforce
+the same exactly-one rule on assignment files. State the checks separately,
+never smooth them into one universal rule.
 
 ### Where the posture is bounded by the contract
 
@@ -146,8 +147,11 @@ for all consumers.
   fires for a missing or undeclared axis — "missing declared keys are malformed,
   not aliased to the baseline". `RejectInsufficientEvidence` is **never produced
   by `ParetoGate::decide`**; the caller (`loop_driver_judge.rs`) downgrades an
-  otherwise-Admit when a material axis is UNKNOWN, and UNKNOWN clamps to a 0.0
-  delta — never regression cover, never a phantom gain. So `filter.md`'s prose
+  otherwise-Admit when a blocking axis is UNKNOWN (including material/evidence
+  axes and non-finite computed deltas). UNKNOWN may clamp to a 0.0 delta —
+  never regression cover, never a phantom gain — but caller precedence can still
+  produce `RejectInsufficientEvidence` or `RejectRegression`, not only
+  `RejectNoImprovement`. So `filter.md`'s prose
   `the directive cannot be satisfied by single-axis improvement` contradicts its
   own `is_acceptable_edit` pseudocode; the A-08 bridge note rules that a
   single-axis improvement with no regression **does** pass. Quote the pseudocode
@@ -185,9 +189,10 @@ for all consumers.
 - Host-install skill is the pre-consolidation inline shape; the losing guards
   are exactly the trilogy ban and the marker-vs-invocation semantics.
 - `~/.agents/godspeed-core/` is named as the operative judge path and is absent.
-- The L1 prompt's band/ceiling rows are a snapshot (they still read `16-100`);
-  the live band is `config/ufo.json` — wave `16–32`, `maxLanes` 100,
-  `maxConcurrentL1` 16, `l1Alias` `m_strong`, `globalRunnerCeiling` 1056.
+- The L1 prompt's **band** rows are a snapshot (they still read `16-100`); it
+  carries no ceiling row. The live band is `config/ufo.json` — wave `16–32`,
+  `maxLanes` 100, `maxConcurrentL1` 16, `l1Alias` `m_strong`,
+  `globalRunnerCeiling` 1056.
 
 ### Questions this card answers
 
