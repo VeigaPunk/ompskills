@@ -11,7 +11,7 @@
 - Failure path: an EACCES removal failure → "failed <path>" + "1 removed · 1 failed", exit 1; `--json` `{removed,failed,results[]}`; exit 1 iff `failed>0`.
 - `--dry-run`: "would remove <path>" / "N dirs would be removed."; `--json` `{wouldRemove}`; the empty case text differs by `--all` ("No orphaned worktrees to remove." vs "No worktrees to remove."); `--json` empty case gives `{removed:0,kept:N}`; never writes (`.git` verified intact).
 - A deleted worktree dir (inside or outside the hub) is **not** reported by `clear --dry-run` (exit 0, nothing selected): git keeps the prunable registration and `clear` is blind to git-level orphaned registrations — it cleans them only via the prune side effect, or `git worktree prune`/`remove`.
-- **Safety finding:** a mis-set base (`OMP_WORKTREE_DIR` pointing at the repo dir) makes `<repo>/.git` classify as an orphan ("unrecognized contents"), so a plain `clear` (no `--all`) would `rm -rf` it (dry-run preview captured; corroborated by TowerSkillDrift D2).
+- **Safety finding:** a mis-set base (`OMP_WORKTREE_DIR` pointing at the repo dir) makes `<repo>/.git` classify as an orphan (verbatim reason "no recognizable worktree contents"), so a plain `clear` (no `--all`) would `rm -rf` it (dry-run preview captured; corroborated by TowerSkillDrift D2).
 - Nested `hub/<group>/<name>` entries are classified too; removing a leaf leaves the intermediate group dir behind.
 **Changed.** Seed entry.
 **Unknown.** `worktreeRemove(path,true)`'s second arg read as force [INFERENCE]; the "parent repo missing" reason is source-only (degenerate window); `kept = t.length` is from source with one confirming observation; the isolation marker literals `["m","merged"]` are quoted verbatim and the mount-teardown role is [INFERENCE].
