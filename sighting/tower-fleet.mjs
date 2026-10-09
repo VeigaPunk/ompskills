@@ -39,7 +39,8 @@
  *     directions and writes nothing;
  *   - `close` refuses (PANE_LIVE) when a target's pane is still live on the
  *     wall, unless `--force`; a mission absent from the wall is skipped, not
- *     an error.
+ *     an error; a wall `complete` failure is recorded per mission and the run
+ *     finishes with exit 2 / COMPLETE_FAILED listing every outcome.
  *
  * Fleet spec (JSON):
  * {
@@ -873,6 +874,7 @@ function verbClose(spec, authority, options) {
     warn(`--force: completing live mission(s) ${live.map((mission) => mission.id).join(", ")} — their panes keep running`);
   }
   const results = [];
+  const failures = [];
   for (const mission of targets) {
     const row = wallById.get(mission.id);
     const worktree = path.join(spec.worktreeRoot, mission.id);
@@ -887,18 +889,26 @@ function verbClose(spec, authority, options) {
     const completed = wallCli(spec, "complete", "--mission", mission.id, "--note", "tower-fleet close");
     const detail = (completed.stdout || completed.stderr).slice(0, 200);
     if (completed.status !== 0) {
-      typed("COMPLETE_FAILED", `wall complete failed for ${mission.id} (exit ${completed.status}): ${detail}`);
+      // Same partial-state policy as launch: record this mission's failure, keep
+      // the completions that already landed, and report every outcome instead of
+      // aborting with nothing but a typed error.
+      failures.push({ id: mission.id, detail });
+      warn(`wall complete failed for ${mission.id} (exit ${completed.status}): ${detail}`);
+      results.push({ id: mission.id, status: completed.status, completed: false, paneLive, phase: wallRowPhase(row), failure: { code: "COMPLETE_FAILED", detail }, worktree });
+      continue;
     }
     results.push({ id: mission.id, status: completed.status, completed: true, paneLive, phase: wallRowPhase(row), worktree });
   }
   if (options.json) {
-    emitJson({ ok: true, verb: "close", fleet: spec.fleet, forced: Boolean(options.force), missions: results, worktreeRemoval: "manual-only" });
+    emitJson({ ok: failures.length === 0, verb: "close", fleet: spec.fleet, forced: Boolean(options.force), failures, missions: results, worktreeRemoval: "manual-only" });
   } else {
     for (const row of results) {
       if (row.completed) {
         process.stdout.write(`completed wall mission ${row.id}${row.paneLive ? " (pane left running: --force)" : ""}\n`);
-      } else {
+      } else if (row.status === "absent") {
         process.stdout.write(`skipped ${row.id} — not on the wall\n`);
+      } else {
+        process.stdout.write(`FAILED ${row.id} — exit ${row.status}: ${row.failure?.detail ?? ""}\n`);
       }
     }
     process.stdout.write("\nWorktrees are NEVER removed automatically. Preserve unmerged work first (inspect, then integrate or keep the branch).\n");
@@ -906,6 +916,9 @@ function verbClose(spec, authority, options) {
     for (const row of results) {
       process.stdout.write(`  git -C ${spec.repo} worktree remove ${row.worktree}\n`);
     }
+  }
+  if (failures.length > 0) {
+    typed("COMPLETE_FAILED", `${failures.length} of ${targets.length} missions failed to complete (${failures.map((failure) => failure.id).join(", ")}); the completions that did land are recorded above`);
   }
   return EXIT_OK;
 }
