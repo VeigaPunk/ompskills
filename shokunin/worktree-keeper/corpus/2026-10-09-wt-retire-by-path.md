@@ -1,0 +1,14 @@
+# 2026-10-09 — retiring one worktree: no `omp worktree remove`; use plain git
+
+**Asked.** Verify the retirement mechanism for a single worktree.
+**Sources.** `omp worktree --help` and action probes; `sighting/tower-fleet.mjs` `verbClose` :1220-1224, :1179, :1209; scratch repo `/tmp/wt-retire-probe`; peer lane WtListSemantics.
+**Observed.**
+- No per-worktree retire verb: help defines ACTION exactly as `list|clear|add`; `omp worktree remove|delete|prune|merge` (bare and with a path arg) all exit 1 with `error: Expected action to be one of: list, clear, add; got "X"`. `clear --dry-run <path>` accepts and ignores the positional (identical output; PATH is documented for `add` only).
+- The real retire command is plain git, printed by the launcher: `sighting/tower-fleet.mjs:1220` "Worktrees are NEVER removed automatically…"; :1221 "retire its worktree by path only — never `omp worktree clear`"; :1223 prints ``  git -C <spec.repo> worktree remove <row.worktree>`` (path = `<worktreeRoot>/<mission-id>`, :1179); `--json` carries `worktreeRemoval:"manual-only"` (:1209). Creation uses `omp worktree add …` (:805-809), retirement is plain git — asymmetric by design.
+- Scratch proof (created + destroyed): `git -C repo worktree remove <m1>` exit 0 removed exactly `m1`, sibling `m2` untouched. A dirty tree is refused: an untracked file → exit 128 "contains modified or untracked files, use --force to delete it" — settle-work-first is enforced by the mechanism. The branch `tower/probe/m1` survived the tree removal (an integration artifact persists independently of the tree).
+- Scope: `omp worktree list`/`clear` scan the agent-managed base dir `~/.omp/wt`, **not** the repo's git worktrees — with two live omp-added worktrees registered, plain `list` printed "No agent-managed worktrees found under /home/vgpnk/.omp/wt." and `--json` gave `[]`. So `.omp/skills/tower/SKILL.md:110-112` and `sighting/l1-prompt.md:163-164` ("inspect with `omp worktree list`") cannot see tower mission trees; the truthful pre-retire check is `git -C <repo> worktree list`.
+- Practice meaning: never reach for `omp worktree clear`/`--all` to retire one tree (a registry sweep that does not even see fleet trees); the only per-path retirement is that one git command naming the exact tree path, no `--force` unless dirty work is knowingly disposable; order is settle → inspect (`git worktree list` + `git status`) → integrate/keep branch → remove path; branch deletion is a separate, deliberate step.
+**Changed.** Seed entry.
+**Unknown.** Non-dry `omp worktree clear` and `clear --all` were never exercised (hard rule). Peer-attributed (not re-run here): `OMP_WORKTREE_DIR` override internals, ENOTDIR crash, an in-base add listing as `live · pr-checkout` — see the list-semantics entry.
+
+**Lane.** WtNoRemoveVerb (reviewer). Report: `reports/worktree-keeper/WtNoRemoveVerb.md`.
