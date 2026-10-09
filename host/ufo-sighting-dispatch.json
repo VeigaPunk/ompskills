@@ -5,7 +5,8 @@
   },
   "swarm": {
     "maxLanes": 100,
-    "waveMinLanes": 32,
-    "waveMaxLanes": 100
+    "minLanes": 16,
+    "waveMinLanes": 16,
+    "waveMaxLanes": 32
   }
 }

@@ -1,8 +1,8 @@
-# UFO Sighting × Godspeed — 32-lane wave smoke test
+# UFO Sighting × Godspeed — 16-lane wave smoke test
 
 The live procedure for the operator directive *"integrate the ufo sighting (tmux
-usage) and the godspeed directive into it; as a test … swarm waves of 32 workers
-but up to 100"*.
+usage) and the godspeed directive into it; as a test … dispatched in swarms of
+16–32, up to 100 per round"*.
 
 Two artifacts, one test:
 
@@ -17,10 +17,11 @@ ignores its contents.
 
 ## What this test proves
 
-1. The post-apply swarm band admits exactly a 32-lane spawn wave and refuses 31
-   and 16 with the typed `too_few_lanes` — the floor is real, not cosmetic.
+1. The post-apply swarm band admits the 16-lane floor wave and the 32-lane wave
+   ceiling, and refuses 15 (`too_few_lanes`), 33 (`wave_too_wide`) and 101
+   (`too_many_lanes`) — every edge is real, not cosmetic.
 2. `scripts/ufo-swarm-wave.mjs run` renders a `ufo-swarm-wave-dispatch-v1`
-   payload whose 32 lanes each carry an explicit taxonomy role, no per-lane
+   payload whose 16 lanes each carry an explicit taxonomy role, no per-lane
    `model` param, and `/skill:godspeed` as the leading line — the Godspeed
    posture is *invoked* per lane, not assumed.
 3. The wave is dispatchable as **exactly one** batched OMP `task` call.
@@ -33,13 +34,13 @@ ignores its contents.
 
 - **Swarm lanes are not wall missions.** Nothing in `ufo-fsd-alpha` registers an
   OMP `task` lane as a mission or a pane; the only auto-registration path is
-  `sighting.autoRegisterInvokedNativeTrial`, which native trials use. A 32-lane
-  wave appears on the wall only as the *parent* mission's L2 counter
+  `sighting.autoRegisterInvokedNativeTrial`, which native trials use. A wave
+  appears on the wall only as the *parent* mission's L2 counter
   (`levels.l2` = unsettled task ids read from that session's transcript), and
   only when the parent session was itself launched or registered on the wall.
   `levels.l2: null` with `levelDetails.l2.status: "opaque"` means **unknown** —
   never report it as settled.
-- **The wall cannot show 32 panes.** Window 1's capacity is the geometry grid
+- **The wall cannot show wave lanes as panes.** Window 1's capacity is the geometry grid
   (3×5 = 15 on 16:9, 3×6 = 18 on 21:9); a named `--fleet` window is capped by
   `sighting.windowPaneCeiling` = 16. This is display capacity, not a wave bound,
   and it is irrelevant to task lanes.
@@ -54,7 +55,7 @@ ignores its contents.
 ## Preconditions and sequencing
 
 The tower runs these in order; the smoke test is meaningless if the apply has
-not landed, because the band under test would still be 16–100.
+not landed, because the live config still enforces the pre-apply 32–100 band.
 
 ```bash
 REPO=/home/vgpnk/Projects/ompskills            # this checkout (post-merge)
@@ -96,10 +97,10 @@ The run writes, under `test/evidence/<stamp>/`:
 | -------- | ---------- |
 | `apply-dry-run.log` | the `host/apply.mjs` gate's full output and exit code |
 | `ufo-root/config/ufo.json` | the band authority used (`--band fixture` synthesizes it; `--band live` points at the real file instead) |
-| `spec-32.json`, `spec-31.json`, `spec-16.json`, `spec-single-family-32.json`, `spec-resume-only.json` | every spec the run judged |
-| `plan-32.stdout.json`, `dispatch-32.json` | the plan and the dispatch payload |
+| `spec-16.json`, `spec-15.json`, `spec-33.json`, `spec-101.json`, `spec-ceiling-32.json`, `spec-single-family-16.json`, `spec-resume-only.json` | every spec the run judged |
+| `plan-16.stdout.json`, `dispatch-16.json` | the plan and the dispatch payload |
 | `swarm-registry.json` | copy of the `ufo-swarm-registry-v1` member registry `run` persisted |
-| `refusal-16.json`, `refusal-31.json` | the below-floor refusals, verbatim |
+| `refusal-15.json`, `refusal-33.json`, `refusal-101.json` | the band-edge refusals, verbatim |
 | `refusals/<code>.json`, `refusals/<code>.output.json` | the rest of the refusal vocabulary — each spec and the planner's typed answer |
 | `plan-resume-only.json`, `record-synthetic.stdout.json` | the floor-exempt resume proof |
 | `route-preflight.json`, `plan-route-families.json` | route-family concentration, single-family vs mixed |
@@ -151,10 +152,10 @@ registered mission. Two ways in:
 
 ```bash
 # a pane of its own, running the command you give it
-bash scripts/ufo-sighting launch --run-id sighting-wave-32 --session-id <omp-session-id> -- omp …
+bash scripts/ufo-sighting launch --run-id sighting-wave-16 --session-id <omp-session-id> -- omp …
 
 # or adopt an existing live pane in window 1 (run from inside that pane)
-bash scripts/ufo-sighting register --run-id sighting-wave-32 --session-id <omp-session-id> --pane-id "$TMUX_PANE" -- omp …
+bash scripts/ufo-sighting register --run-id sighting-wave-16 --session-id <omp-session-id> --pane-id "$TMUX_PANE" -- omp …
 ```
 
 `runId` must match `^[A-Za-z][A-Za-z0-9_-]{0,63}$`, `sessionId`
@@ -165,12 +166,12 @@ If the tower dispatches from a plain OMP session instead, that is legitimate —
 the wall then contributes `open`/`status`/`overview` captures only, and settle
 is proven by steps 6 and 7 alone. Say which of the two happened.
 
-## Step 2 — declare the 32-lane wave spec
+## Step 2 — declare the 16-lane wave spec
 
 The spec `test/run-wave-test.mjs` builds is the reference; it is written to
-`test/evidence/<stamp>/spec-32.json`. Its shape:
+`test/evidence/<stamp>/spec-16.json`. Its shape:
 
-- 32 items, each with an explicit `role` from the ten swarm roles and a
+- 16 items, each with an explicit `role` from the ten swarm roles and a
   pairwise-distinct `prompt` (a duplicate expansion is the typed refusal
   `duplicate_expansion`, never a silent dedupe);
 - roles cycling `scout, reviewer, scribe, executor` — two route families on the
@@ -192,12 +193,12 @@ cd "$UFO"
 UFO_PROJECT_ROOT="$REPO/test/evidence/<stamp>/ufo-root" \
 UFO_CONFIG_PATH="$UFO/config/ufo.json" \
 UFO_FLEET_ALLOW_EXTERNAL_TOOLS=1 \
-  node scripts/ufo-swarm-wave.mjs plan --spec "$REPO/test/evidence/<stamp>/spec-32.json"
+  node scripts/ufo-swarm-wave.mjs plan --spec "$REPO/test/evidence/<stamp>/spec-16.json"
 ```
 
 Expect exit 0 and `schema: ufo-swarm-wave-v1` with `counts.spawn == counts.total
-== 32`, `counts.resume == 0`, and `policy.waveMinLanes == 32`,
-`policy.waveMaxLanes == 100`, `policy.maxLanes == 100`, `policy.source ==
+== 16`, `counts.resume == 0`, and `policy.waveMinLanes == 16`,
+`policy.waveMaxLanes == 32`, `policy.maxLanes == 100`, `policy.source ==
 "config"`. `plan` writes nothing.
 
 The `UFO_PROJECT_ROOT` / `UFO_CONFIG_PATH` pair is what keeps the real
@@ -223,26 +224,26 @@ step.
 
 ```bash
 UFO_PROJECT_ROOT=… UFO_CONFIG_PATH=… UFO_FLEET_ALLOW_EXTERNAL_TOOLS=1 \
-  node scripts/ufo-swarm-wave.mjs run --spec "$REPO/test/evidence/<stamp>/spec-32.json" \
-  > "$REPO/test/evidence/<stamp>/dispatch-32.json"
+  node scripts/ufo-swarm-wave.mjs run --spec "$REPO/test/evidence/<stamp>/spec-16.json" \
+  > "$REPO/test/evidence/<stamp>/dispatch-16.json"
 ```
 
 `run` persists the member registry before emitting the payload. Assert every one
-of these on `dispatch-32.json` (the script asserts all of them; this is the list
+of these on `dispatch-16.json` (the script asserts all of them; this is the list
 to re-read by eye before spending tokens):
 
 | Assertion | Expected |
 | --------- | -------- |
 | `schema` | `ufo-swarm-wave-dispatch-v1` |
-| `counts` | `{spawn: 32, resume: 0, total: 32}` |
+| `counts` | `{spawn: 16, resume: 0, total: 16}` |
 | `taskCall` | non-null — one call, `context` + `tasks` |
-| `taskCall.tasks.length` | 32 |
+| `taskCall.tasks.length` | 16 |
 | per-task keys | exactly `name`, `agent`, `task` — **no `model` key anywhere**; there is no per-lane model knob |
-| `task.task` leading line | `/skill:godspeed`, once, on all 32 |
-| `task.task` distinctness | 32 pairwise-distinct texts |
-| `task.name` distinctness | 32 distinct CamelCase member names |
+| `task.task` leading line | `/skill:godspeed`, once, on all 16 |
+| `task.task` distinctness | 16 pairwise-distinct texts |
+| `task.name` distinctness | 16 distinct CamelCase member names |
 | `task.agent` | an explicit taxonomy role on every lane |
-| registry | `ufo-swarm-registry-v1` at `registry.path`, 32 members, every spawn row `agentId: null` |
+| registry | `ufo-swarm-registry-v1` at `registry.path`, 16 members, every spawn row `agentId: null` |
 
 ## Step 5 — dispatch: exactly one batched OMP `task` call
 
@@ -251,7 +252,7 @@ tool call whose `context` is `payload.taskCall.context` and whose `tasks` is the
 complete `payload.taskCall.tasks` array, verbatim:
 
 ```bash
-node -e 'const d=require("'"$REPO"'/test/evidence/<stamp>/dispatch-32.json");
+node -e 'const d=require("'"$REPO"'/test/evidence/<stamp>/dispatch-16.json");
   console.log(JSON.stringify(d.taskCall,null,1))'
 ```
 
@@ -260,9 +261,10 @@ node -e 'const d=require("'"$REPO"'/test/evidence/<stamp>/dispatch-32.json");
 - Never add, drop, rename or reword a lane, and never add a model param.
   Routing is the role → `@alias` table in the operator's global
   `~/.omp/agent/config.yml`, resolved by OMP.
-- `task.maxConcurrency` is 32 in the candidate host config, so a 32-lane wave
-  fits the host window exactly; a wider wave (up to the 100 ceiling) queues
-  behind it. That queueing is normal and is not a refusal.
+- `task.maxConcurrency` is 32 in the candidate host config, so every wave in
+  the 16–32 band fits the host window exactly; lanes from the later waves of a
+  100-member round queue behind the earlier waves. That queueing is normal and
+  is not a refusal.
 - If `taskCall` is `null`, the wave is resume-only: issue **no** task call and
   send each `resumeSends` entry as
   `hub send --to <entry.resume> --message <entry.message>`.
@@ -277,7 +279,7 @@ proves that on its own.
 # per-lane artifacts. The reportDir in a lane prompt is RELATIVE, so reports
 # land under the dispatching session's cwd — this path is right when that cwd is
 # $REPO, which is what the runner's reportDir assumes.
-ls -1 "$REPO/test/evidence/<stamp>/lane-reports/"*.md | wc -l     # expect 32
+ls -1 "$REPO/test/evidence/<stamp>/lane-reports/"*.md | wc -l     # expect 16
 
 # wall view (parent mission's L2 counter, if step 1b registered it)
 cd "$UFO" && bash scripts/ufo-sighting status --lite
@@ -298,7 +300,7 @@ If lane reports are not where the payload said, they landed relative to a
 different cwd — locate them rather than assuming they are missing:
 
 ```bash
-find "$REPO" "$UFO" -path '*lane-reports/*.md' -newer "$REPO/test/evidence/<stamp>/spec-32.json" 2>/dev/null
+find "$REPO" "$UFO" -path '*lane-reports/*.md' -newer "$REPO/test/evidence/<stamp>/spec-16.json" 2>/dev/null
 ```
 
 ## Step 7 — record, then collect
@@ -325,7 +327,7 @@ Then join the settled outcomes into the evidence envelope. `--results` is a
 ```bash
 UFO_PROJECT_ROOT="$REPO/test/evidence/<stamp>/ufo-root" \
   node scripts/ufo-swarm-collect.mjs collect \
-  --wave "$REPO/test/evidence/<stamp>/dispatch-32.json" \
+  --wave "$REPO/test/evidence/<stamp>/dispatch-16.json" \
   --results "$REPO/test/evidence/<stamp>/settled.json" \
   --out "$REPO/test/evidence/<stamp>/wave-envelope.json"
 ```
@@ -336,7 +338,7 @@ Exit 0 / 1 typed failure / 64 usage. The join is fail-closed in both directions
 cannot name is never invented. With a trusted `reportDir` the collector checks
 each `<reportDir>/<Name>.md` exists as a regular file and emits
 `reportSummary {expected, present, missing}`; **presence only** — it never reads
-or judges report contents. Assert `reportSummary.present == 32` and
+or judges report contents. Assert `reportSummary.present == 16` and
 `reportSummary.missing == []`.
 
 The envelope is evidence for the L1/L0. It is advisory: no lane becomes a judge
@@ -348,7 +350,7 @@ verdict, and wave output never widens a lane's scope.
 cd "$UFO"
 bash scripts/ufo-sighting complete --mission <RUN_OR_MISSION> --dry-run   # plan only, changes nothing
 bash scripts/ufo-sighting complete --mission <RUN_OR_MISSION> \
-  --note "32-lane sighting wave smoke: <N>/32 lanes reported"
+  --note "16-lane sighting wave smoke: <N>/16 lanes reported"
 ```
 
 `--mission` takes a registered `runId` or `m_<hex>` row id — there is no slug
@@ -363,8 +365,8 @@ Honest closing rules:
 
 - Complete only after step 6/7 evidence exists. Completing a live parent
   terminates the process tree the lanes hang off.
-- The note states what was actually observed — `32/32 lanes reported`, or
-  `29/32 lanes reported, 3 failed (lane_timeout)`. Never a round number you did
+- The note states what was actually observed — `16/16 lanes reported`, or
+  `13/16 lanes reported, 3 failed (lane_timeout)`. Never a round number you did
   not count.
 - If no mission was ever registered for the dispatching session, there is
   nothing to complete: `MISSION_NOT_FOUND` is the expected code. Record that
@@ -381,14 +383,15 @@ under the post-apply band, and none of them dispatches anything.
 
 | Case | Expected | Why it matters |
 | ---- | -------- | -------------- |
-| 16-lane spawn spec | exit 1, `too_few_lanes` | the old floor; must no longer be admissible |
-| 31-lane spawn spec | exit 1, `too_few_lanes` | one below the new floor — the raise actually bites |
-| 32-lane spawn spec | exit 0, admitted | exactly at the floor: the narrowest legal wave |
-| 101-lane spawn spec | `too_many_lanes` | the "up to 100" ceiling holds |
+| 15-lane spawn spec | exit 1, `too_few_lanes` | one below the floor — the floor actually bites |
+| 16-lane spawn spec | exit 0, admitted | exactly at the floor: the narrowest legal wave |
+| 32-lane spawn spec | exit 0, admitted | exactly at the wave ceiling: the widest legal wave |
+| 33-lane spawn spec | exit 1, `wave_too_wide` | one above the wave ceiling — one wave never exceeds 32 |
+| 101-lane spawn spec | `too_many_lanes` | the "up to 100" per-L1 round ceiling holds |
 | resume-only wave, 1 lane | exit 0, `counts.resume == 1` | floor-exempt — a resume is continuity to a parked agent, not a new wave |
 | resume message text | no `/skill:godspeed` | a resumed lane keeps its session; a stacked invocation would reach it twice |
-| all-`m_fast` 32-lane wave | `routePreflight.concentration.singleFamily == true` (1 family, 32 lanes) | the concentration shape the preflight exists to flag |
-| mixed 32-lane wave | `singleFamily == false`, 2 families (`m_mid` 16, `m_fast` 16) | the wave under test is genuinely spread |
+| all-`m_fast` 16-lane wave | `routePreflight.concentration.singleFamily == true` (1 family, 16 lanes) | the concentration shape the preflight exists to flag |
+| mixed 16-lane wave | `singleFamily == false`, 2 families (`m_mid` 8, `m_fast` 8) | the wave under test is genuinely spread |
 | duplicate prompt expansion | `duplicate_expansion` | never a silent dedupe |
 | spawn lane without a role | `role_required` | no wave of generic `task` agents |
 | role outside the ten | `unknown_role` | frozen-topology seats are not swarm lanes |
@@ -401,7 +404,7 @@ under the post-apply band, and none of them dispatches anything.
 - A refusal is a reason to fix the spec or execute the work directly — never a
   reason to bypass validation, and never a reason to split one wave into several
   `task` calls.
-- Report only observed results. If the wall says `opaque`, the reports are 29/32,
+- Report only observed results. If the wall says `opaque`, the reports are 13/16,
   or a lane timed out, that is the finding.
 - The wave is advisory input to one L1. No lane judges, no lane spawns (lanes are
   leaf; `agents/executor.md`'s single `labrat` is the only permitted exception,
@@ -430,10 +433,10 @@ cd "$UFO" && bash scripts/ufo-sighting open
 
 # 5. THE DISPATCH — by hand, from an OMP session, exactly one batched task call,
 #    using taskCall.context and the complete taskCall.tasks array from the
-#    dispatch-32.json that step 2/3 wrote. No script does this.
+#    dispatch-16.json that step 2/3 wrote. No script does this.
 
 # 6. settle, record, collect, close — steps 6 to 8 above
 ```
 
-Wider waves: `node test/run-wave-test.mjs --band live --lanes 100` validates the
-ceiling end of the band the same way (still dispatching nothing).
+Wider waves: `node test/run-wave-test.mjs --band live --lanes 32` validates the
+ceiling end of the wave band the same way (still dispatching nothing).
