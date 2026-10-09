@@ -41,3 +41,4 @@ mission's round-1 research wave (27 lanes, `reports/wave-smith/`).
 | 2026-10-09-r2-corrections.md | round-2 falsification ledger — every corrected claim with its verifier | 2026-10-09 |
 | 2026-10-09-bounded-verification-band-resume-registry.md | the shokunin's own entry for its first assignment (band/resume/registry probes) | 2026-10-09 |
 | 2026-10-09-r3-reverification-band-resume-registry.md | the shokunin's re-verification of the corrected card (3/3 reconfirmed, index gap repaired) | 2026-10-09 |
+| 2026-10-09-spawn-bearing-band-refusals-15-33-101.md | spawn-bearing 15/33/101 lanes → too_few_lanes / wave_too_wide / too_many_lanes, verbatim messages, gate order | 2026-10-09 |
