@@ -20,7 +20,7 @@ contract lives only in `docs/EPHEMERAL-L1-MISSIONS.md`.**
 | FM5 | destroy refuses registered/active roots | STILL-TRUE | prepare:806,809,810 |
 | FM6 | force cannot bypass a valid-identity marker | STILL-TRUE | prepare:830-843 |
 | FM7 | attested shell-free OpenCode argv only | STILL-TRUE | sighting:4196,4199,4210,4236-4288 |
-| FM8 | no credential values in the environment file | STILL-TRUE | prepare:714-725 |
+| FM8 | no credential values in the environment file | STILL-TRUE | prepare:706-715 |
 | FM9 | clone ops get no host credentials | STILL-TRUE | prepare:178-199 |
 | FM10 | OpenCode compat config (no model pin, disables) | STILL-TRUE | prepare:524-533, :504 |
 

@@ -33,8 +33,8 @@ missionRoot]`), `sourceHead`, `snapshotDigest`. The mission id is **not**
 emitted — recover it from `cleanupCommand[4]`. Pinned at
 `tests/prepare-ephemeral-l1.test.js:336-342`.
 
-Custody: `snapshotDigest` lands only in the marker's `snapshotDigest` field
-(:725); destroy shape-checks `/^[a-f0-9]{64}$/` (:798) and echoes it.
+Custody: `snapshotDigest` lands in the marker's `snapshotDigest` field (:725) and
+is echoed by destroy's return; destroy shape-checks `/^[a-f0-9]{64}$/` (:798).
 `ufo-sighting.mjs` + lib contain **zero** references to
 `snapshotDigest`/`digestLabel`/`snapshotCheckout` — the launch validates the env
 file and marker but never re-derives the digest.

@@ -22,11 +22,12 @@ Ephemeral codes:
 - `SANDBOX_UNAVAILABLE` (4206) — bwrap unresolvable at pane start.
 - `INVALID_OPENCODE_DISPATCH` (4208) — OpenCode executable unavailable at pane
   start.
-- `OMP_EPHEMERAL_TWIN_UNSAFE` (3908) — a twin requested for an ephemeral mission.
+- `OMP_EPHEMERAL_TWIN_UNSAFE` (3908) — an **OMP** argv carrying `--no-session` ("an OMP twin requires durable independent session state"); it is **not** an ephemeral guard — a twin row carries no `environment` and bypasses the marker gate and sandbox (round-2 correction).
 
 Registry: `surface.mjs:48 FAIL_CODE_PATTERN = /\bfail\(\s*"([A-Z][A-Z0-9_]*)"/gu`
-— reproduced over the five surface files = 72 codes; `environmentFail` sites
-register only via base:328.
+— reproduced with the source's own regex over the five surface files (the r1
+count was 72, the r2 re-derivation 73 — treat the count as derived, not
+authoritative); `environmentFail` sites register only via base:328.
 
 Bare surface: `prepare-ephemeral-l1.mjs` has **no** error class (grep
 `class|SightingError|extends Error` → no output) and 113 `throw new Error(...)`

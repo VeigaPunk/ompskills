@@ -5,7 +5,10 @@ against the source. Source: `docs/EPHEMERAL-L1-MISSIONS.md` (51 normative rows) 
 `prepare-ephemeral-l1.mjs`, `config/ephemeral-l1.machine.json`, `ufo-sighting.mjs`.
 Lane `DocsReconcile` (critic).
 
-Verdicts: 43/51 MATCHES, **0 DIVERGES**, 8 UNVERIFIABLE. Targeted claims all
+Verdicts: 43/51 MATCHES, **1 DIVERGES**, 8 UNVERIFIABLE. The single divergence
+(round-2 correction): the doc's "prints deterministic JSON fields" wording is
+contradicted by the source — `id` defaults to `mission-${randomUUID()}` (:659),
+so the field *set* is deterministic but the values are not. Targeted claims all
 verified verbatim: root config:3; `--no-local`+detached+`clean -ffdX`+binary
 overlay+`ls-files --others --exclude-standard` (prepare:617-634); auth copy
 (:686-700); env map `{...paths,...flagVariables}` (:706-709); `SANDBOX_UNAVAILABLE`

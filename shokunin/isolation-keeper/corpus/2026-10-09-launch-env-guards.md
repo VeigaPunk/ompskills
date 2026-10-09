@@ -7,16 +7,17 @@ Lane `LaunchEnvGuards` (reviewer, with a real `/tmp` harness + negative CLI
 probes).
 
 CLI parse (`--env-file`, 4555-4581): `launch` needs a command after `--`
-(`INVALID_ARGUMENT`); the flag is resolved with `path.resolve` first (:4567), then
-`loadMissionEnvironment` enforces the reader rules — non-absolute → `environment
-file path must be absolute and canonical`; missing → `environment file is
-missing`; symlink → `environment file must not be a symlink`; not owner-private →
-`must be owner-only`; size `<2` or `> maxEnvironmentBytes` → `environment file
-size is outside the policy bound`; bad JSON → `environment file is not valid
-JSON`; extra keys → `environment variables contains unsupported fields`; a flag
-whose value ≠ policy → `<key> must equal true`; unsupported schema →
-`environment schema is unsupported`. `register` **cannot** bind an environment at
-all (`--env-file` is off its allowlist → `register does not support --env-file`).
+(`INVALID_ARGUMENT`); the flag is resolved with `path.resolve` first (:4567), so
+the reader's non-absolute refusal is reachable only for **library** callers that
+pass a relative path. Then `loadMissionEnvironment` enforces the reader rules —
+missing → `environment file is missing`; symlink → `environment file must not be
+a symlink`; not owner-private → `must be owner-only`; size `<2` or
+`> maxEnvironmentBytes` → `environment file size is outside the policy bound`;
+bad JSON → `environment file is not valid JSON`; extra keys → `environment
+variables contains unsupported fields`; a flag whose value ≠ policy → `<key> must
+equal true`; unsupported schema → `environment schema is unsupported`. `register`
+**cannot** bind an environment at all (`--env-file` is off its allowlist →
+`register does not support --env-file`).
 
 Launch-time guards (`launchMission` 2379-2405, real transcripts):
 - Row 1 runs **before** `preflightArgvDispatch`. An env-file launch whose argv
@@ -47,7 +48,7 @@ named `opencode` beneath `ROOT`, so that branch is UNEXERCISED.
 
 Rebinding (`newMission` :2090 binds `validateStoredEnvironment(spec.environment)`;
 `runPane` :4351-4356): `loadMissionEnvironment(mission.environment.envFile,
-{allowedMarkerStates:["registered"]})` then a **byte-identity** compare
+{allowedMarkerStates:["registered"]})` then a **structural-equality** compare (`JSON.stringify` on both parsed objects — whitespace-insensitive, key-order-sensitive)
 `JSON.stringify(...) !== JSON.stringify(mission.environment)` →
 `environment file changed after mission registration`. Any change to the file
 between registration and pane start is refused.
@@ -64,7 +65,7 @@ TMPDIR SWAP false).
 
 Sandbox namespace nuance (same harness transcript): `--dir /run` is emitted as an
 empty namespace dir and `/run` is **never** `--ro-bind`ed, so the ambient
-`/run/user/<uid>/…` tmux socket is absent inside the sandbox
+tmux server socket (`/tmp/tmux-<uid>/default`) is absent inside the sandbox — excluded by the separate `--dir /tmp`, not by `/run`
 (`tests/ufo-sighting.test.js:1436` pins the same property).
 
 ## Unknowns

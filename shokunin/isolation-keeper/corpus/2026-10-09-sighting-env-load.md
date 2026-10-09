@@ -36,7 +36,7 @@ Rules:
   `root === stored.ephemeralRoot`, `envFile === envFile`, `Array.isArray
   (activePids)`, `activePids.length === 0`, `allowedMarkerStates.includes
   (state)`. Default `allowedMarkerStates = ["prepared"]` (:84); `runPane` passes
-  `["registered"]` (:4353) plus a byte-identity recheck `environment file changed
+  `["registered"]` (:4353) plus a structural-equality recheck `environment file changed
   after mission registration` (:4354-4356); `main` (:4567) uses the default.
 
 Helpers: `assertExactKeys` → `<label> contains unsupported fields` (base:341);
@@ -48,7 +48,7 @@ Helpers: `assertExactKeys` → `<label> contains unsupported fields` (base:341);
 
 Observed nuance: `readBoundedUtf8` (base:480-486) throws a **plain Error**, so
 its bound trip is retyped to `environment file is not valid JSON` (:108) /
-`ephemeral marker is missing or malformed` (:124) — the `instanceof SightingError`
+`ephemeral marker is missing or malformed` (:125) — the `instanceof SightingError`
 rethrow preserves only typed failures raised inside the same try. Typing stays
 `INVALID_ENVIRONMENT`; the message is inaccurate.
 

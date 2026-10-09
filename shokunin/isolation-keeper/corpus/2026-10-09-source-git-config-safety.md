@@ -18,8 +18,13 @@ Call order: `validateSource` (557) realpaths/stats, then calls
 `assertSourceGitConfigSafe(canonical)` at 562 — the module's **first**
 source-side git invocation, before `rev-parse` (563). `createEphemeralL1`
 validates the id regex (662) before any git at all, and the guard precedes
-`snapshotCheckout`'s clone/diff/ls-files. A missing/unparseable `.git/config`
-fails closed (exit 128 ∉ `allowStatus [0,1]`).
+`snapshotCheckout`'s clone/diff/ls-files.
+
+**Correction (round 2):** the guard runs `git config --local --list` with
+`allowStatus [0,1]` and inspects **stdout only** (:227-230). A malformed
+`.git/config` is therefore **not** shown to fail closed here — a `/tmp` probe
+returned status 0 with the parse error on stderr and the guard passed; the later
+`rev-parse` is what fails. Do not claim this stage refuses a malformed config.
 
 Why `extensions.worktreeconfig` is refused outright: with it on, a
 `.git/config.worktree` `core.fsmonitor` is invisible to `git config --local

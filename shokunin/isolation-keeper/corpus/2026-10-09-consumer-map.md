@@ -24,7 +24,7 @@ Attestation boundary — four strings in `config/ephemeral-l1.machine.json`:
 Producer→consumer rows:
 - `environment.json` content `{schema,ephemeralRoot,environment}` — producer
   prepare:706-715 → consumers ufo-sighting:111-112,35,46-55 (load/validate),
-  :2090 (manifest revalidate), :4353-4355 (pane-start reload + byte-identity),
+  :2090 (manifest revalidate), :4353-4355 (pane-start reload + structural equality),
   :4182-4183,4286 (bwrap child env).
 - `environment.json` path `<root>/isolation/environment.json` — producer
   prepare:711 → consumers ufo-sighting:129 (marker attestation), prepare:786,
@@ -42,7 +42,7 @@ Producer→consumer rows:
 - `childEnvironment` — producer config:30-39 → consumer ufo-sighting:4182-4183
   (overlay order: childEnvironment **then** environment), :4201-4204.
 - lifecycle — `prepared` (create) → `registered` (launch :2415; rollback
-  :2429/:2443) → pane start (`["registered"]` + byte-identity :4353-4355;
+  :2429/:2443) → pane start (`["registered"]` + structural equality :4353-4355;
   substrate/argv/cwd guards :2393-2397) → `active` :4367 → `finished` :4391 →
   destroy accepts `prepared|finished` only.
 

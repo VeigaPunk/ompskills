@@ -35,7 +35,7 @@ Consumer mirror:
   absent, but if present must not be a symlink (:70-76).
 
 Producer and consumer both load `config/ephemeral-l1.machine.json` — producer
-via `POLICY_PATH` (:30), consumer via `readEphemeralPolicy` (base.mjs:207-245).
+via `POLICY_PATH` (:30), consumer via `readEphemeralPolicy` (base.mjs:209-237).
 A `pathVariables` duplicate fails the producer's length-inclusive exact-set rule
 and would make every launch fail `INVALID_ENVIRONMENT` with a misleading
 message — hence the length clause.

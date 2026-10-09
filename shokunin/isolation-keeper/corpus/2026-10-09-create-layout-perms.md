@@ -1,15 +1,15 @@
 # create-layout-perms — the mission root layout and the owner-only discipline
 
 Asked: quote the laid-out tree, the permission enforcement, and the marker
-write. Source: `scripts/prepare-ephemeral-l1.mjs:255-283,442-535,659-752`;
+write. Source: `scripts/prepare-ephemeral-l1.mjs:255-283,442-535,659-754`;
 `config/ephemeral-l1.machine.json`. Lane `CreateLayout` (scout).
 
-Layout (`createEphemeralL1` 659-752):
+Layout (`createEphemeralL1` 659-754):
 
 | path | writer | mode |
 | --- | --- | --- |
 | `<configuredRoot>/<id>/` | `mkdirSync` atomic claim :670 | 0700 |
-| `checkout/` | `snapshotCheckout` :678; `chmod 0700` :618 | 0700 |
+| `checkout/` | `snapshotCheckout` :677; `chmod 0700` :618 | 0700 |
 | `isolation/` | `ensurePrivateDirectory(..., configuredRoot)` :679 | 0700 |
 | `isolation/{home,config,data,cache,state,tmp}` | `environmentPaths` loop :681 | 0700 |
 | `isolation/config/opencode/` (+ `agents/`) | `prepareOpenCode` :469-471 | 0700 |
@@ -20,7 +20,10 @@ Layout (`createEphemeralL1` 659-752):
 | `isolation/environment.json` | :711/714/715 | 0600 |
 | `.ufo-ephemeral-l1.json` | :729/736/737 | 0600 |
 
-Every file write uses `O_EXCL|O_NOFOLLOW` + `flush:true` then `chmod`.
+Every file write **in `createEphemeralL1`'s own emitters** uses
+`O_EXCL|O_NOFOLLOW` + `flush:true` then `chmod` (the auth copy is the exception:
+`copyFileSync` with `COPYFILE_EXCL` then `chmod`; the sighting marker transition
+uses a tmp file + `rename`).
 `ensurePrivateDirectory` (255-283): mkdir `0700` if absent, O_NOFOLLOW open,
 `fstat` directory check, uid check, `fchmod 0700`, then a realpath containment
 check against `within` (`resolves outside the configured root`). `mkdirSync` is

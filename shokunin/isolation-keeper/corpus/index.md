@@ -5,7 +5,7 @@ then the entries relevant to the assignment.
 
 Domain anchors (substrate `/home/vgpnk/Projects/ufo-fsd-alpha`):
 `scripts/prepare-ephemeral-l1.mjs` sha256 `d91907da202b19235cde179ba1cec9be3da181157dd07b359ba83f9d5b23bbfb`
-(963 lines), `config/ephemeral-l1.machine.json` sha256
+(962 lines by `wc -l`), `config/ephemeral-l1.machine.json` sha256
 `9d0184a479ffda4ef3c4a4004de0c0652ba95e6ab7369ae0094c9817486d9e01` (1373 bytes),
 `scripts/ufo-sighting.mjs` sha256
 `5e8ea127e5244b1edec4d35b40a201d4fb4057dc316506582a8e5e9e2f09d19e` (4714 lines).
@@ -35,7 +35,7 @@ Seeded from the mission's round-1 research wave (32 lanes,
 | 2026-10-09-sighting-marker-load.md | marker match fields at load vs pane start, transition ownership refusal, expected-state map | 2026-10-09 |
 | 2026-10-09-bwrap-argv.md | full sandbox argv order, writable/readonly sets, cleared child env, `SANDBOX_UNAVAILABLE` | 2026-10-09 |
 | 2026-10-09-marker-transition-states.md | complete marker state machine with writers and admitting readers; orphan `active` | 2026-10-09 |
-| 2026-10-09-launch-env-guards.md | `launch --env-file` guards: substrate/argv/cwd, registration↔start byte-identity, rollbacks | 2026-10-09 |
+| 2026-10-09-launch-env-guards.md | `launch --env-file` guards: substrate/argv/cwd, registration↔start structural equality, rollbacks | 2026-10-09 |
 | 2026-10-09-sandbox-unavailable.md | `resolveExecutablePath` + policy PATH resolution, `SANDBOX_UNAVAILABLE` surfacing, no-prepend verdict | 2026-10-09 |
 | 2026-10-09-docs-reconcile.md | each normative `docs/EPHEMERAL-L1-MISSIONS.md` sentence vs source: MATCHES/DIVERGES/UNVERIFIABLE | 2026-10-09 |
 | 2026-10-09-prepare-test-pins.md | `tests/prepare-ephemeral-l1.test.js`: 41 tests, pinned groups, run transcript, not-pinned list | 2026-10-09 |
@@ -47,3 +47,4 @@ Seeded from the mission's round-1 research wave (32 lanes,
 | 2026-10-09-evidence-digest.md | the wave's gate report: suite transcript, sibling census, axis pins, not-established list | 2026-10-09 |
 | 2026-10-09-card-corpus-convention.md | the card frontmatter/body-section and corpus index/entry convention to match | 2026-10-09 |
 | 2026-10-09-verification-dispatch.md | the card's first dispatch on a bounded task, and the observed result | 2026-10-09 |
+| 2026-10-09-r2-corrections.md | round-2 falsification ledger — every corrected claim with its verifier lane | 2026-10-09 |

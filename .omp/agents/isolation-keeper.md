@@ -22,10 +22,11 @@ load. A claim about isolation that none of those three carries does not exist.
 ### Sources of truth (exact paths)
 
 Substrate (read-only; `/home/vgpnk/Projects/ufo-fsd-alpha`), anchored at
-`ufo-fsd-alpha@87c351a`-era HEAD:
+`ufo-fsd-alpha@5ace2559` HEAD:
 
 - `scripts/prepare-ephemeral-l1.mjs` — the creator/destroyer; sha256
-  `d91907da202b19235cde179ba1cec9be3da181157dd07b359ba83f9d5b23bbfb`, 963 lines.
+  `d91907da202b19235cde179ba1cec9be3da181157dd07b359ba83f9d5b23bbfb` (962 lines
+  by `wc -l`).
   Exports `readPolicy`, `scrubbedGitEnvironment`, `gitOutput`, `isBeneath`,
   `ensurePrivateDirectory`, `validateSource`, `snapshotCheckout`,
   `createEphemeralL1`, `destroyEphemeralL1`, `main`.
@@ -33,19 +34,20 @@ Substrate (read-only; `/home/vgpnk/Projects/ufo-fsd-alpha`), anchored at
   `ufo-ephemeral-l1-policy-v1`; sha256 `9d0184a479ffda4ef3c4a4004de0c0652ba95e6ab7369ae0094c9817486d9e01`, 1373 bytes.
 - `scripts/ufo-sighting.mjs` — the launch consumer; sha256
   `5e8ea127e5244b1edec4d35b40a201d4fb4057dc316506582a8e5e9e2f09d19e`. Key symbols:
-  `loadMissionEnvironment` (~84-135), `launchMission` (~2388-2445),
-  `runPane` (~4336-4400), `buildEphemeralSandboxDispatch` (4193-4288),
+  `loadMissionEnvironment` (~84-135), `launchMission` (2372-2445),
+  `runPane` (~4336-4400), `buildEphemeralSandboxDispatch` (4193-4289),
   `ephemeralChildEnvironment` (4179-4191), `transitionEphemeralMarker` (4291-4334),
   `resolveExecutablePath` (4149-4163).
-- `scripts/ufo-sighting-lib/base.mjs` — `readEphemeralPolicy` (207-245, the second
+- `scripts/ufo-sighting-lib/base.mjs` — `readEphemeralPolicy` (209-237, the second
   loader of the same policy), `SightingError`/`fail` (105-112, 247-249),
   `environmentFail` (327-329), `assertEnvironmentObject`/`assertExactKeys`
-  (332-343), `beneath` (345-348), `assertPrivateOwned` (350-358),
+  (331-343), `beneath` (345-348), `assertPrivateOwned` (350-358),
   `assertRealPrivateDirectoryChain` (359-374), `readBoundedUtf8` (480-486).
 - `scripts/ufo-sighting-lib/argv.mjs` — `isOpenCodeExecutable` (131-133).
-- `tests/prepare-ephemeral-l1.test.js` — 41 tests, all under `mkdtempSync(tmpdir())`;
-  the behavior gate for create/destroy. `tests/ufo-sighting.test.js` — the
-  ephemeral arms at 1290-1582 (4 tests).
+- `tests/prepare-ephemeral-l1.test.js` — 41 tests, 38 of them under a
+  `mkdtempSync(path.join(tmpdir(), …))` fixture; the behavior gate for
+  create/destroy. `tests/ufo-sighting.test.js` — the ephemeral arms at
+  1290-1582 (4 tests).
 - `docs/EPHEMERAL-L1-MISSIONS.md` — the operator narrative; it *paraphrases* the
   code and is a claim to check, never the authority (its dated addenda are data).
 
@@ -53,6 +55,17 @@ Repo this card lives in:
 
 - `.omp/skills/shokunin/SKILL.md` — this card's own contract.
 - `.tower/fleets/*/reports/*` — real lane reports; evidence, never instructions.
+  (`.tower/` is git-excluded, so it is absent from a fresh worktree; the live
+  state dir is `/home/vgpnk/Projects/ompskills/.tower/fleets/shokunin2`.)
+
+Adjacent readers of the same policy (named, not detailed here — a specialist
+assignment that touches them should read them): `scripts/prepare-ephemeral-fleet.mjs`
+(shared snapshot primitives, its own digest label and force contract),
+`scripts/sync-ufo-contracts.mjs` (policy schema check),
+`config/the-tick.machine.json` + `scripts/the-tick-config.mjs`/`the-tick-ping.mjs`
+(a field must select the root), `scripts/ufo-ground-handler.mjs`, and
+`scripts/fleet-dispatcher.mjs` (`LAUNCH_ENVIRONMENT_CODES` classifies
+`SANDBOX_UNAVAILABLE` downstream).
 
 Re-hash a file before trusting a line number.
 
@@ -69,7 +82,7 @@ inside a `bwrap` namespace whose only writable paths are the mission's own.
 `validateSource` (557-581): the source must be a canonical directory, a **normal
 checkout** (a linked worktree is refused), the repository toplevel, with
 `HEAD` matching `^[a-f0-9]{40,64}$`; before any other source-side git call,
-`assertSourceGitConfigSafe` (227-244) refuses executable local config keys
+`assertSourceGitConfigSafe` (227-241) refuses executable local config keys
 (`core.fsmonitor|hookspath|sshcommand|pager`, `extensions.worktreeconfig`,
 `include*`, `uploadpack.*`, `filter.*`, `diff.*`, `alias.*`). Every git spawn
 runs under `scrubbedGitEnvironment` (178-192): `GIT_CONFIG_GLOBAL=/dev/null`,
@@ -82,27 +95,32 @@ Then, in order:
    clone's `.git` must be a **directory, not a symlink** (620-621) — a worktree
    `.git` file is refused.
 2. `git -C <clone> checkout --detach <sourceHead>` and `clean -ffdX`.
-3. `removeCloneRemotes` (583-607): remove every `git remote`, then sweep
-   `^remote\.` and `^branch\.` config keys; a survivor **throws**, not warns.
+3. `removeCloneRemotes` (583-607): remove every `git remote`; then a `^remote\.`
+   config sweep **throws** on any survivor, `^branch\.` keys are `--unset-all`'d,
+   and a final `^(remote|branch)\.` sweep throws if anything remains.
 4. Overlay: `git -C <source> diff --binary <PINNED sourceHead>` piped into
    `git -C <clone> apply --binary --index --whitespace=nowarn -` (628-632) —
    staged **and** unstaged tracked changes, diffed against the pinned HEAD (not
    live HEAD), so a HEAD move cannot yield a silent hybrid.
 5. Untracked replay: `ls-files --others --exclude-standard -z`, sorted, copied
-   by `copyUntrackedEntry` (307-380) — symlinks confined to the source root and
+   by `copyUntrackedEntry` (307-373) — symlinks confined to the source root and
    never absolute, per-file 32 MiB / total 256 MiB bounds, O_NOFOLLOW bounded
-   reads, source mode preserved (chmod, umask-proof), and re-verified by
-   `assertCopiedUntracked`. Ignored debris (`.ufo`, sessions) is never copied.
+   reads, the source's permission bits (`mode & 0o777`) preserved umask-proof
+   (the setuid/setgid/sticky bits are digested as `0o7777` but **not** copied),
+   and re-verified by `assertCopiedUntracked`. Ignored debris (`.ufo`, sessions)
+   is never copied.
 6. A final equality check re-reads the source diff and untracked list; an
    ignored entry or a gained remote **aborts**.
 
 Returns the **snapshot digest**: `sha256( "<label>\0<sourceHead>\0" + trackedDiff
 + Σ untracked records )`, label default `ufo-ephemeral-l1-v1` (633-656). It
 attests the source's file-state identity (HEAD + tracked binary diff + bounded
-untracked replay); the source is never mutated, and the source's own index split
+untracked replay); no source worktree file, ref, or object is modified (git's
+stat-cache refresh can still rewrite `.git/index` metadata, which the
+detect-only equality check does not observe), and the source's own index split
 is not what is captured.
 
-`createEphemeralL1` (659-752) then builds `policy.root/<id>/`:
+`createEphemeralL1` (659-754) then builds `policy.root/<id>/`:
 
 | path | content | mode |
 | --- | --- | --- |
@@ -115,9 +133,14 @@ is not what is captured.
 | `isolation/environment.json` | the attested env file | 0600 |
 | `.ufo-ephemeral-l1.json` | the marker | 0600 |
 
-Every write is `O_EXCL|O_NOFOLLOW`, `flush:true`, then `chmod`; every directory
-is `ensurePrivateDirectory` (255-283) — O_NOFOLLOW open, uid check, `fchmod
-0700`, and a realpath containment check against the trusted configured root. The
+Every **authored** write uses `O_EXCL|O_NOFOLLOW` with mode 0600 and
+`flush:true` (the auth copy is the exception: `copyFileSync` with
+`COPYFILE_EXCL`); `envFile`, marker, resolver snapshot and auth file are
+`chmod`'ed after write; the configured root, the isolation tree and the OpenCode
+dirs go through `ensurePrivateDirectory` (255-283) — O_NOFOLLOW open, uid check,
+`fchmod 0700`, and a realpath containment check against the trusted configured
+root (the mission root's own `mkdirSync` and the untracked-parent `mkdirSync` do
+not). The
 OpenCode config carries **no `model` key** (524-534; grep `model` → no match), so
 the isolated product resolves its own default — no project pin. On any failure
 the mission root is removed (`rm -rf`) before the error is re-thrown.
@@ -136,21 +159,25 @@ isolation root) plus the 3 `flagVariables`
 a key list the consumer rejects), and the emitter re-checks drift (550-553).
 Write is refused if the bytes exceed `maxEnvironmentBytes` (16384).
 
-The consumer mirrors it: `validateStoredEnvironment` (31-81) demands exact keys
+The consumer mirrors it: `validateStoredEnvironment` (32-82) demands exact keys
 `[schema, ephemeralRoot, environment]` on disk (`envFile` is *injected* at 112,
 never written, so the loader's **stored** shape is the four-key
 `[schema, ephemeralRoot, environment, envFile]`), the inner map exactly
 `pathVariables ++ flagVariables` (45-46),
 every path absolute + canonical + **beneath** `ephemeralRoot` (47-53), and each
 path a real owner-only directory chain with no symlink traversal (68-80;
-`OPENCODE_DB` may be absent but must not be a symlink). A mismatch is
-`INVALID_ENVIRONMENT`.
+`OPENCODE_DB` may be absent, but when present it must be a regular owner-only
+file and not a symlink). A mismatch is `INVALID_ENVIRONMENT`.
 
-### Launch and the bwrap sandbox (`buildEphemeralSandboxDispatch`, 4193-4288)
+### Launch and the bwrap sandbox (`buildEphemeralSandboxDispatch`, 4193-4289)
 
-A twin of an ephemeral mission is refused outright (`OMP_EPHEMERAL_TWIN_UNSAFE`,
-3908): a fresh logical identity cannot clone an OpenCode resume, and an ephemeral
-root is single-pane by construction.
+There is **no ephemeral twin guard**: `OMP_EPHEMERAL_TWIN_UNSAFE` (3908) lives in
+`rewriteOmpTwinArgv`, reached only for an **OMP** argv, and fires on an OMP argv
+carrying `--no-session` ("an OMP twin requires durable independent session
+state"). `twinMission` builds the candidate row **without** an `environment`
+(3997-4006), so a twin of an ephemeral mission runs the origin's OpenCode argv in
+the ephemeral checkout with **no marker gate and no bwrap sandbox** — a real
+isolation gap, not a guard.
 
 `launch --env-file F` calls `loadMissionEnvironment(F)` (4565-4567), which is the
 strict reader above **plus** a marker gate (115-133): the marker at
@@ -164,12 +191,14 @@ no native session) with `cwd === <ephemeralRoot>/checkout`; `register` cannot
 bind an environment at all. It stamps `prepared → registered` (2415), rolling
 back to `prepared` on any launch fault (2429/2443).
 
-`runPane` (4336-4400) re-loads the env file with `allowedMarkerStates:
-["registered"]`, requires byte-identity with the registered mission ("environment
-file changed after mission registration", 4354), builds the sandbox, then
-transitions `registered → active` (4367), spawns, and on exit `active → finished`
-(4391). `buildEphemeralSandboxDispatch` refuses unless the argv is a directly
-attested `opencode` executable at `cwd = <root>/checkout`.
+`runPane` (4336-4397) re-loads the env file with `allowedMarkerStates:
+["registered"]`, requires structural equality with the registered mission
+(`JSON.stringify` on both parsed objects — whitespace-insensitive,
+key-order-sensitive; "environment file changed after mission registration",
+4355), builds the sandbox, then transitions `registered → active` (4367), spawns,
+and on exit `active → finished` (4391). `buildEphemeralSandboxDispatch` refuses
+unless the argv is a directly attested `opencode` executable at
+`cwd = <root>/checkout`.
 
 The sandbox argv, in order (4236-4287):
 
@@ -199,12 +228,16 @@ bwrap --die-with-parent --new-session --unshare-user --unshare-ipc
 - `--clearenv` + `--setenv` of `policy.childEnvironment ++ environment.environment
   ++ TERM ++ UFO_SIGHTING_*` (4179-4191, 4286) — the ambient environment is not
   inherited; `SSH_AUTH_SOCK`/tokens are empty.
-- `--dir /run` is emitted as an **empty** namespace dir and `/run` is never
-  `--ro-bind`ed, so the ambient `/run/user/<uid>` (a tmux socket) is absent
-  inside the sandbox.
+- `--dir /run` is emitted **only when** `resolverSource` is a symlink into
+  `/run` (the live host's `/etc/resolv.conf` case), and `/run` is never
+  `--ro-bind`ed. `--dir` is emitted only for ancestors of the mount destinations
+  and the resolver target, so with the shipped policy root (`/scratch/...`) `/tmp`
+  is **not** a mount destination either; the tmux server socket is unreachable
+  because bwrap's root is an empty tmpfs, not because of a `--dir /tmp`.
 - Resolver: the snapshot must stay canonical **inside** the root and non-symlink
-  (4218-4225); the mount target must be the realpath of
-  `sandbox.resolverSource` and start with `/etc/` or `/run/` (4228-4234).
+  (4218-4225); the mount target is `resolverSource` itself, or a **one-hop**
+  `path.resolve(dirname(src), readlink(src))` when it is a symlink (4228-4230),
+  and must start with `/etc/` or `/run/` (4231-4235).
 
 ### The marker state machine
 
@@ -212,18 +245,20 @@ Document: `<root>/.ufo-ephemeral-l1.json`, schema `ufo-ephemeral-l1-root-v1`,
 exactly 10 keys — `schema, root, clone, isolationRoot, envFile, sourceRoot,
 sourceHead, snapshotDigest, state, activePids`. `clone`/`isolationRoot`/`envFile`
 must equal the prepared layout exactly; `sourceHead`/`snapshotDigest` are hex
-shapes; `sourceRoot` is carried but value-checked by nobody.
+shapes; `sourceRoot` is carried but value-checked by no reader in the scanned
+tree.
 
-| edge | writer | admitted by |
+| edge | writer | resulting state admitted by |
 | --- | --- | --- |
 | create → `prepared` (`activePids: []`) | `createEphemeralL1` 726/736 | load default; destroy |
 | `prepared` → `registered` | `launchMission` 2415 | load with `["registered"]` (runPane) |
 | `registered` → `prepared` (rollback) | 2429, 2443, 4361 | load default; destroy |
-| `registered` → `active` (`activePids:[pid]`) | `runPane` 4367 | **no** `allowedMarkerStates` set |
+| `registered` → `active` (`activePids:[pid]`) | `runPane` 4367 | `active` is admitted by no `allowedMarkerStates` set (the pane loads with `["registered"]` at 4353, then transitions); it is read only as the predecessor of `finished` |
 | `active` → `finished` | `runPane` 4391 | destroy |
 
-`active` is written but loadable by nothing; destroy refuses it by name, as it
-refuses `registered`. Only `prepared` (with empty pids) and `finished` are
+`active` is written but loadable by no `allowedMarkerStates` set (`finished` is
+likewise in no set, but it is destroyable); destroy refuses `active` by name, as
+it refuses `registered`. Only `prepared` (with empty pids) and `finished` are
 destroyable.
 
 ### Destroy and bounded recovery
@@ -242,21 +277,27 @@ never downgraded** — `active`/`registered`/malformed-markers-with-identity
 re-throw instead of being deleted heuristically. Only a marker that is absent or
 lacks the expected identity falls back to layout recovery, which still requires
 `checkout/`+`isolation/` as canonical owner-private directories **and** a witness
-(`checkout/.git` directory *or* `isolation/environment.json` regular file). Force
-coerces only the literal `"true"` or `"1"`; any other value is ordinary destroy.
+(`checkout/.git` directory *or* `isolation/environment.json` regular file). The
+**CLI** coerces only the literal `"true"` or `"1"` (any other value is ordinary
+destroy); a direct library caller passes a boolean, so any truthy value forces.
+`destroy --parent-root <dir>` names the configured root a mission was created
+under, so a root created by a library embedder outside the policy root is still
+destroyable from the CLI.
 
 ### Refusal surfaces
 
 | surface | typed? | shape |
 | --- | --- | --- |
 | `prepare` CLI (create/destroy) | no — bare `Error` | stderr `{"error": "<message>"}`, exit 2 (955-961); success = JSON stdout, exit 0 |
-| `ufo-sighting` env/marker/sandbox | yes — `SightingError` | `{ok:false, code, message}`; `INVALID_ENVIRONMENT` from `environmentFail`, `SANDBOX_UNAVAILABLE`, `INVALID_OPENCODE_DISPATCH`, `INVALID_ARGUMENT`; fallback `UNEXPECTED_ERROR` |
+| `ufo-sighting` env/marker/sandbox | yes — `SightingError` | `{ok:false, code, message}`; `INVALID_ENVIRONMENT` from `environmentFail` (env/marker/sandbox refusals), `SANDBOX_UNAVAILABLE`, `INVALID_OPENCODE_DISPATCH`, `OMP_EPHEMERAL_TWIN_UNSAFE`, `INVALID_ARGUMENT` (CLI argument errors, e.g. `launch requires a command after --`); fallback `UNEXPECTED_ERROR` |
 
-Common prepare messages are quoted verbatim in the corpus (e.g. `ephemeral policy
-exact-key`/`marker`/`sandbox`/`opencode` refusals; `source git config refuses
-executable key: <key>`; `untracked symlink escapes the source: <p>`; `ephemeral
-mission already exists: <id>`). Raw `ENOENT`/`SyntaxError` from a missing marker
-or subdirectory are behaviors, **not** contract messages.
+Common prepare messages are quoted verbatim in the corpus (e.g. the marker
+exact-key, `source git config refuses executable key: <key>`, `untracked symlink
+escapes the source: <p>`, `ephemeral mission already exists: <id>`; the
+sandbox/opencode refusal strings are summarized as variants, not quoted). On the
+**prepare** side, raw `ENOENT`/`SyntaxError` from a missing marker or
+subdirectory are behaviors, **not** contract messages; the sighting loaders
+retype theirs to `INVALID_ENVIRONMENT`.
 
 ### Residuals and unknowns (carry these, never paper over them)
 
@@ -264,7 +305,10 @@ or subdirectory are behaviors, **not** contract messages.
   dangerous-config sentinel, detect-only equality check) — there is no OS-level
   permission or lock on the source tree.
 - `isBeneath` (243-246) is **lexical, not symlink-aware**; it is safe only where
-  callers realpath both arguments. Do not claim it rejects symlinks.
+  callers realpath both arguments. The consumer's twin `beneath` (base.mjs:345)
+  is the same lexical predicate; symlink safety there comes from
+  `assertRealPrivateDirectoryChain`'s lstat walk. Do not claim either rejects
+  symlinks.
 - `ensurePrivateDirectory` mkdirs and fchmods **before** its containment check
   (256/270 before 279) — a swapped in-root ancestor can create a real 0700 dir
   outside the root before the refusal (containment still holds).
@@ -275,13 +319,21 @@ or subdirectory are behaviors, **not** contract messages.
   namespace; the resolver snapshot is bound in precisely because the network is
   intended. "No remote" is enforced by remote stripping + credential scrubbing,
   **not** by a network boundary.
+- A **twin** row carries no `environment`, so it bypasses the marker gate and the
+  bwrap sandbox entirely; the marker gate also binds only `--env-file` launches,
+  so a plain `launch --cwd <ephemeralRoot>/checkout` (no `--env-file`) takes the
+  non-ephemeral path. Single-pane is a property of the env-file launch, not of
+  the root.
 - A `SIGKILL`ed pane leaves the marker `active` with a dead `activePids` entry,
   and a row that dies before the pane claims the root is left parked at
-  `registered`; nothing repairs either: ordinary destroy refuses, `--force`
-  refuses too (the identity gate re-throws), and the CLI exposes no other
-  recovery verb. Those strands have **no recovery path** (observed: a
-  `registered` root refused with `refusing to destroy a registered ephemeral
-  root` and removed only by `rm -rf`).
+  `registered` (the sandbox-build failure path rolls back to `prepared` at 4361,
+  so the parked case is a crash, not a refusal). While the marker carries the
+  expected identity, ordinary destroy and `--force` both refuse (the identity
+  gate re-throws; live-reproduced for `registered` and for `active` with a dead
+  pid). Recovery exists but is **not** marker-preserving: remove the marker (or
+  leave it invalid) and `destroy --force true` removes the root through the
+  layout-recovery arm — verified live. `rm -rf` is not the only option, and it
+  skips the arm's canonical/owner-private/witness validation.
 - The doc's bounded retention/triage-deadline for a failed root is
   **unenforced** — no code records or prunes the ephemeral root.
 - `--force` has **zero coverage in the shipped suite at this checkout** (the
@@ -293,9 +345,9 @@ or subdirectory are behaviors, **not** contract messages.
   `SightingError`; it raises a plain `Error`, so a bound trip is retyped to
   `INVALID_ENVIRONMENT` with an inaccurate "not valid JSON" message (typing is
   unaffected).
-- `ufo-sighting` never re-derives `snapshotDigest`; the digest's consumer is the
-  marker alone. `readEphemeralPolicy` (base.mjs) does not validate
-  `sandbox.executable` — only `readPolicy` does.
+- `ufo-sighting` never re-derives `snapshotDigest`; its consumers are the marker
+  field and destroy's return value. `readEphemeralPolicy` (base.mjs) does not
+  validate `sandbox.executable` — only `readPolicy` does.
 - Consumer loader byte-bound floor is `1` (`base.mjs`) vs producer floor `1024`
   (`readPolicy`); no compliant mission exists under the lower floor.
 - `prepare-ephemeral-fleet.mjs` is a **separate** isolation surface with its own
@@ -321,7 +373,8 @@ entry `shokunin/isolation-keeper/corpus/<YYYY-MM-DD>-<slug>.md` (what was asked,
 what was observed with exact paths, symbols, commands, and refusal codes, what
 changed, what remains unknown) and **append** its row to `index.md`. The corpus is
 append-only: never rewrite, reorder, or delete an entry or a row. A missing corpus
-is never a gate — report it and continue without one.
+is never a gate — report it and continue without one, and never create a corpus
+outside the repository.
 
 ## The bounds
 

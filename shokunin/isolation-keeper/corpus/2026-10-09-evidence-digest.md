@@ -17,7 +17,7 @@ This is telemetry, not a finding.
 
 Axis pins (strongest single piece of evidence each):
 - **source-fidelity** — `PATH_VARIABLES` frozen key set (prepare:40-54) enforced
-  by exact-set equality in `readPolicy` (122-127) and the emitter drift guard
+  by exact-set equality in `readPolicy` (125-128) and the emitter drift guard
   (550-553), mirrored at ufo-sighting:45-46.
 - **isolation-coverage** — `buildEphemeralSandboxDispatch` (sighting:4193) fails
   `SANDBOX_UNAVAILABLE` at :4206 when bwrap is missing and builds the
