@@ -782,6 +782,13 @@ function verbLaunch(spec, authority, options) {
         try {
           const parsed = JSON.parse(launched.stdout || launched.stderr);
           if (parsed?.code) detail = `${parsed.code}: ${parsed.message ?? detail}`;
+          // A run id can still be reserved by a row the registry cannot see —
+          // a ghost row (manifest-live, pane dead) is in none of its arrays.
+          // The wall's refusal is the authority; name the stale count when it
+          // is the likely cause instead of leaving a bare conflict.
+          if (parsed?.code === "RUN_ID_CONFLICT" && registry.staleCount > 0) {
+            detail = `${detail}; the wall also reports ${registry.staleCount} stale mission(s) with no live pane — \`bash <ufoRoot>/scripts/ufo-sighting reconcile\` may clear the reservation`;
+          }
         } catch { /* verbatim text is the fallback detail */ }
         failure = { code: "LAUNCH_FAILED", detail };
       } else {
