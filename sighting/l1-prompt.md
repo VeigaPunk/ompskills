@@ -1,6 +1,6 @@
-/skill:ufo
-/skill:godspeed
 /skill:tower
+/skill:godspeed
+/skill:swarm
 
 # Tower fleet L1 — `{{missionId}}` · axis `{{axis}}`
 
@@ -16,13 +16,17 @@ The `/skill:` lines above are invocation markers. If they did not inject the
 skill bodies into this session (an initial argv message is not parsed as a
 slash command), read them explicitly, in this order:
 
-1. `skill://ufo` — the UFO-FSD mission frame (axes, Pareto admission, WWKD).
+1. `skill://tower` — the worktree and dispatch discipline you are running.
 2. `skill://godspeed` — the iteration posture.
-3. `skill://tower` — the worktree and dispatch discipline you are running.
-4. `skill://swarm` — the wave validator contract and lane shape.
+3. `skill://swarm` — the wave validator contract and lane shape.
+4. `skill://wwkd` — the planner stance behind step 1 of the round loop.
 
-If a URI does not resolve, proceed with the structure written in this prompt:
-it is self-contained, and the skills are enrichment, never a gate.
+`skill://ufo` is optional enrichment, and only when your repo is the UFO
+substrate: its load order expects `ssot/godspeed-core/directive.md` and fails
+closed without it. This prompt already carries the UFO essence — dynamic axes,
+Pareto admission, WWKD planning, sequential waves, honest receipts — so a
+missing skill is never a gate. If a URI does not resolve, proceed with the
+structure written here.
 
 ## Identity and bounds
 
