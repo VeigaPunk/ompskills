@@ -30,3 +30,4 @@ relevant to the assignment before starting, and append one row per new entry.
 | [2026-10-09-validator-env-contract.md](2026-10-09-validator-env-contract.md) | swarm validator env/path/arg contract (UFO_* vars, relative-path rules) | 2026-10-09 |
 | [2026-10-09-wwkd-skill-pair.md](2026-10-09-wwkd-skill-pair.md) | wwkd's two copies are byte-identical; canonical source named | 2026-10-09 |
 | [2026-10-09-card-dispatch-verification.md](2026-10-09-card-dispatch-verification.md) | live band + edge keys, the validator's one config file, observed vs committed | 2026-10-09 |
+| [2026-10-09-r2-verification-corrections.md](2026-10-09-r2-verification-corrections.md) | round-2 verification: 21 corrected claims, citation slips, card edits | 2026-10-09 |

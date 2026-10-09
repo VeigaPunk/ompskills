@@ -23,13 +23,20 @@ Repository (`ompskills` root — your cwd when dispatched from the repo or a
 mission worktree):
 
 - `.omp/skills/tower/SKILL.md`, `.omp/skills/swarm/SKILL.md`,
-  `.omp/skills/shokunin/SKILL.md` — the skills this repo owns.
+  `.omp/skills/shokunin/SKILL.md` — the skills this worktree carries.
+  Only `shokunin/SKILL.md` is exclusive to this repo; substrate `.omp/skills/`
+  also holds `tower` and `swarm` copies with different bytes — say which tree a
+  citation resolves against, and never assume the two agree.
 - `sighting/tower-fleet.mjs` — the tower fleet launcher (verbs, spec fields,
   typed refusals, exit codes).
 - `sighting/l1-prompt.md` — the rendered fleet L1 prompt template.
-- `host/apply.mjs`, `host/omp-agent.config.yml` — host install + agent config.
+- `host/apply.mjs`, `host/omp-agent.config.yml`, `host/ufo-sighting-dispatch.json`
+  — host install, the agent-config candidate, and the dispatch delta.
 - `test/tower-fleet.test.mjs`, `test/run-wave-test.mjs` — what the suite pins.
-- `reports/tf-audit-*.md` — prior audits of the docs, prompt, band, tests.
+- `reports/tf-audit-docs.md`, `reports/tf-audit-prompt.md`,
+  `reports/tf-audit-band.md`, `reports/tf-audit-tests.md`,
+  `reports/tf-audit-launcher.md`, `reports/tf-audit-routing.md`,
+  `reports/tf-audit-wall.md` — the seven prior audits.
 
 Substrate (`/home/vgpnk/Projects/ufo-fsd-alpha`, read-only):
 
@@ -37,10 +44,15 @@ Substrate (`/home/vgpnk/Projects/ufo-fsd-alpha`, read-only):
   `record`; `ufo-swarm-wave-v1`, `ufo-swarm-wave-dispatch-v1`,
   `ufo-swarm-registry-v1`), and `scripts/ufo-mission-result.mjs`
   (`loadSwarmPolicy`, `gatedConfigPath`, `MAX_SWARM_LANES`).
-- `config/ufo.json` — the live band, ceilings and membrane paths.
-- `agents/*.md` — the taxonomy role cards (card-format reference).
+- `config/ufo.json` — the live band, ceilings and membrane paths; its working
+  tree can differ from `HEAD`, so say which one you read.
+- `agents/` — the 13 taxonomy role cards (scout, reviewer, critic, connector,
+  sentinel, executor, mutation-tester, revenger, simplifier, scribe, planner,
+  distiller, labrat) — the card-format reference.
 - `.omp/hooks/pre/ufo-godspeed-inject.js` — the godspeed dispatch hook.
-- `skills/godspeed/SKILL.md`, `skills/godspeed-core/*`,
+- `skills/godspeed/SKILL.md`, `skills/godspeed-core/README.md`,
+  `skills/godspeed-core/always-on.md`, `skills/godspeed-core/directive.md`,
+  `skills/godspeed-core/filter.md`, `skills/godspeed-core/velocity.md`,
   `skills/wwkd/SKILL.md`, `.omp/skills/ufo/SKILL.md` — substrate skills.
 
 Questions it answers:
@@ -56,12 +68,14 @@ Questions it answers:
 ## The corpus protocol
 
 Read `shokunin/skill-scribe/corpus/index.md` and the entries relevant to the
-assignment before starting. After finishing, write a dated entry
+assignment before starting. It is a table whose columns are exactly
+`| entry | topic | added |`; append one row per new entry and never reorder or
+delete a row. After finishing, write a dated entry
 (`shokunin/skill-scribe/corpus/<YYYY-MM-DD>-<slug>.md`) distilled to what was
 asked, what was observed (exact paths, symbols, commands, refusal codes), what
-changed, and what remains unknown; then append its row to the index. Never
-rewrite or delete an entry — the corpus only grows. A missing corpus is never a
-gate: report it and continue, and never create a corpus outside the repository.
+changed, and what remains unknown, then append its row. Never rewrite or delete
+an entry — the corpus only grows. A missing corpus is never a gate: report it
+and continue, and never create a corpus outside the repository.
 
 ## The bounds
 
