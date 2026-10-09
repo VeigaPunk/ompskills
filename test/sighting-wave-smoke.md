@@ -16,7 +16,8 @@ Two repo files these steps drive, neither of them a test: `sighting/tower-fleet.
 (the launcher that turns the wall into a one-pane-per-L1 fleet) and its prompt
 template `sighting/l1-prompt.md`.
 
-Everything the dry half produces lands under `test/evidence/<stamp>/`. Evidence
+Everything `test/run-wave-test.mjs` produces lands under `test/evidence/<stamp>/`;
+`test/tower-fleet.test.mjs` writes only its own temp fixtures. Evidence
 is run output, not source: `test/evidence/.gitignore` keeps the directory and
 ignores its contents.
 
