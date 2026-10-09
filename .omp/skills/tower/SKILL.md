@@ -127,26 +127,43 @@ them before dispatch.
 ## Sighting fleet (tower mode)
 
 `sighting/tower-fleet.mjs` turns the wall into a declared fleet: one
-interactive omp pane per L1 mission. Verbs: `plan` (default, writes nothing)
-· `launch --apply` · `status` · `close --apply`; a mutation verb without
-`--apply` refuses (`MUTATION_REQUIRES_APPLY`). The fleet spec JSON declares
-`fleet`, `repo`, `base`, `ufoRoot`, and missions (`id`, `title`, `axis`,
-`goal`, pairwise-disjoint repo-relative `scope` prefixes, `skills`);
-`launch --apply` gives each mission its own worktree under
-`<repo>/.tower/worktrees/<fleet>/<id>` on branch `tower/<fleet>/<id>`,
-copies its skills in, renders `sighting/l1-prompt.md` as the pane's prompt,
-and opens its pane on the `ufo_sighting` wall's fleet window
-(`launch --fleet <fleet>`) — at most `sighting.dispatch.maxConcurrentL1`
-live L1 panes, bounded per window by `sighting.windowPaneCeiling`. Each pane
-is the mission's self-iterating coordinator, dispatching swarm waves of
-`sighting.dispatch.swarm.waveMinLanes`–`waveMaxLanes` lanes with up to
-`maxLanes` lanes per round — every number read live from
+interactive omp pane per L1 mission, each in a fleet-named tmux window of the
+`ufo_sighting` session. Verbs: `plan` (default, writes nothing), `launch
+--apply`, `status`, `close --apply`; every verb needs `--spec <fleet.json>`
+and accepts `--json`, and `launch`/`close` refuse without `--apply`
+(`MUTATION_REQUIRES_APPLY`, exit 2) before they read the spec or touch the
+wall. Typed refusals print `{ok:false,code,message}` on stderr and exit 2;
+usage errors exit 64.
+
+The fleet spec declares `fleet`, `repo`, `ufoRoot`, and missions (`id`,
+`title`, `axis`, `goal`, repo-relative `scope` prefixes, optional `skills`);
+`base` (default: the repo's HEAD branch), `stateDir`
+(`<repo>/.tower/fleets/<fleet>`), `worktreeRoot`
+(`<repo>/.tower/worktrees/<fleet>`), `roundCeiling` (`1`), and `maxTime`
+(`3h`) have defaults. `launch --apply` creates each mission's worktree under
+`<worktreeRoot>/<id>` on branch `tower/<fleet>/<id>`, copies its skills in,
+writes its rendered `sighting/l1-prompt.md` prompt to
+`<stateDir>/<id>.prompt.md` with its session dir under
+`<stateDir>/sessions/<id>`, and opens its pane with `--cwd` set to that
+worktree. A spec declaring more missions than
+`sighting.dispatch.maxConcurrentL1` or `sighting.windowPaneCeiling` is refused
+up front (`L1_CEILING_EXCEEDED`, `PANE_CEILING_EXCEEDED` — `plan` refuses
+too). An existing worktree is reused with a warning, a pane whose launch fails
+is recorded while the rest of the fleet still comes up (`LAUNCH_PARTIAL`,
+exit 2), and `<stateDir>/fleet.json` still records every mission.
+
+Each pane is the mission's self-iterating coordinator, dispatching swarm waves
+of `sighting.dispatch.swarm.waveMinLanes`–`waveMaxLanes` lanes with up to
+`maxLanes` lanes per round — every band number and ceiling is read live from
 `<ufoRoot>/config/ufo.json`, never hardcoded, and routing only through
-`--model @<missionFormat.l1Alias>` (bare `m_*` aliases; never a pinned
-provider/model). Writer isolation is enforced at the fleet gate
-(`SCOPE_OVERLAP` refuses intersecting mission scopes) and inside each
-mission: a lane that writes gets its own worktree and a disjoint path set,
-otherwise lanes are read-only. `close --apply` completes wall missions only;
-it never removes a worktree automatically — it prints the exact
-`git -C <repo> worktree remove <path>` per mission and warns that unmerged
-work must be preserved first.
+`--model @<missionFormat.l1Alias>` (never a pinned provider/model). Writer
+isolation is enforced at the fleet gate (`SCOPE_OVERLAP` refuses intersecting
+mission scopes) and inside each mission: a lane that writes gets its own
+worktree and a disjoint path set, otherwise lanes are read-only.
+
+`status` reads the wall's fleet rows plus each mission's round receipts.
+`close --apply` completes wall missions and never removes a worktree: it
+prints the exact `git -C <repo> worktree remove <path>` per mission and warns
+that unmerged work must be preserved first. The launcher's own writes land
+only under `<stateDir>`, `<worktreeRoot>`, and the mission worktrees, and every
+shell-out is `spawnSync` with an explicit argv array — never a shell string.
