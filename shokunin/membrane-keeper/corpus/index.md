@@ -24,3 +24,4 @@ Append-only. One row per entry; never reorder, rewrite, or delete.
 | 2026-10-09-fixture-seal-rust.md | Rust seal writer vs JS writer: payload divergences, fail-open windows | 2026-10-09 |
 | 2026-10-09-card-neighbors.md | neighboring shokunin boundaries; host-apply membrane bypass | 2026-10-09 |
 | 2026-10-09-smoke-candidate-writes-screen.md | smoke dispatch: screen fires on candidate_writes exact match, not touched_paths | 2026-10-09 |
+| 2026-10-09-r2-verification-corrections.md | round-2 fact-check: substantive + anchor corrections to seeded entries | 2026-10-09 |

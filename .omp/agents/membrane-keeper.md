@@ -35,24 +35,25 @@ so re-hash before trusting a line number:
 | native screen | `crates/ufo-core-runtime/src/native.rs:316-345` | same union screen over **survivor seats only**; sets `loop_stop = AuthorityBoundary` (:343-345); emits no seal inside `crates/` |
 | verdict | `crates/ufo-core-runtime/src/lib.rs:630`, `state.rs:19-58` | `NativeHandoffVerdict.loop_stop`; `AuthorityBoundary` is a `LoopOutcome` and `CheckpointStopReason` variant (snake_case `authority_boundary`) |
 | seal writers | `loop_driver_publish.rs:94-108` (Rust fixture); `scripts/run-omp-native-trial.mjs:1831-1863` (JS) | `.ufo/membrane-seal.json`, kind `ufo-membrane-seal-v1`, atomic 0600; payload keys match but `accept_digests` encoding and `round` base diverge (see corpus) |
-| seal readers | `loop_driver_publish.rs:113-148` (`refuse_if_membrane_sealed`, gates `dry.rs:86` + `resume.rs:557`); `run-omp-native-trial.mjs:1796-1818, 3336-3341` | a standing seal refuses fresh dispatch; the JS gate exempts resume pairings and `--prepare-only` |
+| seal readers | `loop_driver_publish.rs:113-148` (`refuse_if_membrane_sealed`, gates `loop_driver_dry.rs:86` + `loop_driver_resume.rs:557`); `run-omp-native-trial.mjs:1796-1818, 3336-3341` | a standing seal refuses fresh dispatch; the JS gate exempts resume pairings and `--prepare-only` |
 | unseal | `crates/ufo-cli/src/main.rs:989-1109` (`charter_sign`, dispatch :219-221) | TTY-only: `is_terminal(stdin) && is_terminal(stdout)` (:990) else `{ok:false, kind:"non_interactive"}` exit 2 |
 | screening | `scripts/collect-omp-native-handoff.mjs:413-471, 1076-1088, 1276-1291`; `scripts/collect-omp-native-handoff-lib/screening.mjs:25-33` | five classes; `membrane.screening.classes` overrides the default set (unknown class or non-array = die); flags land as `screening_flags` on the `NativeProposal` wrapper — evidence only, never admission input |
 | spec 06 | `docs/advisory/2026-09-17-ufo-improvement-pack/06-membrane-signoff-and-artifact-trust.md` | landed 2026-09-17 (P5); **every line anchor in its status block is stale** — names/symbols hold, numbers drifted |
 | run-logic | `skills/ufo/references/run-logic.md` | §4.2 screening precedent (:425-435), :1184-1193 seal + operator sign-off, :1193 the "edits to its own senses are operator-owned, like publishing (I10)" doctrine; I10 itself (:81) covers local verification + publishing only |
-| drills | `crates/ufo-core-runtime/tests/loop_driver.rs:963-1043` (D-membrane/negative); `crates/ufo-cli/tests/cli_contract.rs:2353-2589` (charter sign); `tests/collect-omp-native-handoff.test.js:3692-3724` (D-screen/clean) | the negative drill uses a **test-local** membrane list — it cannot disprove over-breadth of the canonical list |
+| drills | `crates/ufo-core-runtime/tests/loop_driver.rs:963-1043` (D-membrane/negative); `crates/ufo-cli/tests/cli_contract.rs:2353-2651` (charter sign); `tests/collect-omp-native-handoff.test.js:3692-3724` (D-screen/clean) | the negative drill uses a **test-local** membrane list — it cannot disprove over-breadth of the canonical list |
 
 ### The enforcement chain
 
 Admitted proposal whose `touched_paths ∪ candidate_writes[].path` prefix-matches
 `membrane.paths` → verdict `loop_stop = authority_boundary` + `membrane_accepts`
 → seal written (`ufo-membrane-seal-v1`, atomic 0600) → next **fresh** dispatch
-refused (fixture: prose bail at `refuse_if_membrane_sealed`; launcher: typed die
-at `run-omp-native-trial.mjs:3336-3341`) → operator runs `ufo charter sign
+refused (fixture: prose bail at `refuse_if_membrane_sealed`; launcher: untyped
+`die` at `run-omp-native-trial.mjs:3336-3341`) → operator runs `ufo charter sign
 <runId>` at a real terminal → seal decoded (`no_seal` / `seal_unreadable` /
 `seal_mismatch` refusals, exit 2) → Phase 0 stages `contracts, build, drills`
-run bounded (`main.rs:850`; 60 s contracts, 900 s build/drills,
-`UFO_CHARTER_PHASE0_TIMEOUT_SECS` override; a failed/unrunnable stage is a
+run bounded (`main.rs:850`; contracts stage bound by
+`UFO_CONTRACT_SYNC_TIMEOUT_SECS`, build/drills by `UFO_CHARTER_PHASE0_TIMEOUT_SECS`
+(900 s default); a failed/unrunnable stage is a
 failed stage, never skipped) → charter artifact `.ufo/charter/<runId>.json`
 (kind `ufo-charter-sign-v1`, written **before** the pass check) → on pass the
 seal is removed (`main.rs:1099-1104`); on `phase0_failed` the seal stands
@@ -70,13 +71,17 @@ seal is removed (`main.rs:1099-1104`); on `phase0_failed` the seal stands
   `sha256:<hash of serialized Proposal>`. No test binds them.
 - Seal payloads match on keys/kind but diverge on `accept_digests` encoding,
   `round` base (0- vs 1-based), and `session_id` source.
-- `screening_flags` never reach admission: judge validates non-emptiness and
-  `screening.version` only; spec 06's singular `screening_flag` name and its
-  `membrane_signoff` telemetry are artifacts, not what landed.
+- `screening_flags` never reach the admission decision: intake validators can
+  reject a flag-bearing proposal (v1 freeze, empty-string check), but no
+  admission/dedup/digest path reads them; spec 06's singular `screening_flag`
+  name and its `membrane_signoff` telemetry are artifacts, not what landed.
 - `membrane.screening.version` is validated by the judge but has **no reader**;
-  `classes: []` silently disables all screening.
-- `host/apply.mjs` rewrites `config/ufo.json` (a membrane-listed path) with no
-  membrane awareness — a genuine boundary gap owned by `host-smith`'s surface.
+  `classes: []` disables screening in the collector (collector :456-471) but the
+  judge's canonical-config validator rejects an empty list (lib.rs:888-895) — in
+  a launched trial the judge wins.
+- `host/apply.mjs` (ompskills repo, not the substrate) rewrites
+  `config/ufo.json` (a membrane-listed path) with no membrane awareness — a
+  genuine boundary gap owned by `host-smith`'s surface.
 - `refuse_if_membrane_sealed` uses `is_file()`: fail-open on a dangling symlink
   or directory named `membrane-seal.json`.
 - Spec 06's proposed path 3 was `scripts/collect-omp-native-handoff.mjs`; the
