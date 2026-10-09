@@ -12,7 +12,7 @@
  *   node sighting/tower-fleet.mjs plan   --spec <fleet.json> [--json]
  *   node sighting/tower-fleet.mjs launch --spec <fleet.json> --apply [--json]
  *   node sighting/tower-fleet.mjs status --spec <fleet.json> [--json]
- *   node sighting/tower-fleet.mjs close  --spec <fleet.json> --apply [--mission <id>] [--json]
+ *   node sighting/tower-fleet.mjs close  --spec <fleet.json> --apply [--mission <id>] [--force] [--json]
  *
  * Default verb is `plan` (which writes nothing). `launch` and `close` refuse
  * without `--apply`. Exit codes: 0 ok · 2 typed error (`{ok:false,code,
@@ -23,11 +23,33 @@
  *     removed by the operator with the exact per-path command this tool
  *     prints, never automatically;
  *   - never edit anything under `<ufoRoot>`; writes land only under
- *     `<stateDir>`, `<worktreeRoot>`, and the mission worktrees;
+ *     `<stateDir>`, `<worktreeRoot>`, and the mission worktrees — and both
+ *     write roots are refused (INVALID_SPEC) when their realpath lands inside
+ *     the substrate, on the repo root, or inside the repo's `.git`;
  *   - every shell-out is `spawnSync` with an explicit argv array — no shell
  *     strings built from spec content;
  *   - the omp argv stays interactive (no `-p`/`--print`, no `--mode`), and
- *     `omp --cwd` always equals the mission cwd.
+ *     `omp --cwd` always equals the mission cwd;
+ *   - a failed mission never aborts the run: it is recorded with its typed
+ *     failure, the panes already up keep running, and fleet.json is written
+ *     either way (`ok:false`, exit 2, code LAUNCH_PARTIAL);
+ *   - relaunch is idempotent: an existing worktree, an existing prompt (byte
+ *     identical -> left untouched), and an existing wall row are all adopted
+ *     instead of recreated; the row is looked up in the wall's whole registry
+ *     (live rows plus its retired `completed[]`/`stopped[]` history), because
+ *     a run id stays reserved while any registered row holds it — a retired
+ *     row is recorded as RUN_ID_RESERVED, never re-launched;
+ *   - liveness is read from the wall's LIVE view only (`status --lite`'s
+ *     `missions[]`, `levels.l1` = the wall's own `isLiveStatus`), never from a
+ *     retired row's `phase`, which is a dispatcher observation: a retired row
+ *     therefore can never read as live, and a live-view row without a level
+ *     reads as live rather than risking a completion or a re-launch;
+ *   - `status` reconciles the wall against `<stateDir>/fleet.json` in both
+ *     directions and writes nothing;
+ *   - `close` refuses (PANE_LIVE) when a target's pane is still live on the
+ *     wall, unless `--force`; a mission absent from the wall is skipped, not
+ *     an error; a wall `complete` failure is recorded per mission and the run
+ *     finishes with exit 2 / COMPLETE_FAILED listing every outcome.
  *
  * Fleet spec (JSON):
  * {
@@ -49,9 +71,11 @@ import { spawnSync } from "node:child_process";
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -85,7 +109,7 @@ function typed(code, message) {
 function usageExit(message) {
   process.stderr.write(JSON.stringify({ ok: false, code: "USAGE", message }) + "\n");
   process.stderr.write(
-    "usage: node sighting/tower-fleet.mjs [plan|launch|status|close] --spec <fleet.json> [--apply] [--mission <id>] [--json]\n"
+    "usage: node sighting/tower-fleet.mjs [plan|launch|status|close] --spec <fleet.json> [--apply] [--mission <id>] [--force] [--json]\n"
   );
   process.exit(EXIT_USAGE);
 }
@@ -167,6 +191,61 @@ function scopeOverlaps(a, b) {
   const long = a.length <= b.length ? b : a;
   return long.every((part, index) => index >= short.length || short[index] === part)
     && short.every((part, index) => long[index] === part);
+}
+
+/** Resolve a path that may not exist yet by realpath-ing its deepest existing
+ * ancestor: a symlinked parent must not smuggle the result somewhere else.
+ * A dangling link on the way is reported (`dangling: true`) instead of being
+ * silently resolved lexically — the kernel would fail the write later, after
+ * the wall has been touched. */
+function realpathDeepest(target) {
+  let current = path.resolve(target);
+  const tail = [];
+  while (!existsSync(current)) {
+    // `throwIfNoEntry` suppresses ENOENT only: an intermediate component that
+    // is not a directory (ENOTDIR) still throws, and that must not turn a
+    // refused write root into an untyped error.
+    let isLink = false;
+    try {
+      isLink = lstatSync(current)?.isSymbolicLink() === true;
+    } catch {
+      isLink = false;
+    }
+    if (isLink) {
+      return { resolved: path.resolve(target), dangling: true };
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    tail.unshift(path.basename(current));
+    current = parent;
+  }
+  try {
+    return { resolved: path.resolve(realpathSync(current), ...tail), dangling: false };
+  } catch {
+    return { resolved: path.resolve(target), dangling: false };
+  }
+}
+
+/** A write root must never reach into the substrate or the repo's own git
+ * plumbing — the two places the safety contract forbids, both reachable
+ * through a spec field, a symlinked parent, or a symlinked repo/ufoRoot. BOTH
+ * sides of every comparison are realpath-resolved, so neither a symlinked
+ * child nor a symlinked parent can launder the write. */
+function assertSafeWriteRoot(value, field, roots) {
+  const { resolved, dangling } = realpathDeepest(value);
+  if (dangling) {
+    typed("INVALID_SPEC", `${field} ${value} resolves through a dangling symlink — the write would fail after the wall was touched`);
+  }
+  const inside = (child, parent) => child === parent || child.startsWith(parent + path.sep);
+  if (inside(resolved, roots.ufoReal) || inside(resolved, roots.ufoLexical)) {
+    typed("INVALID_SPEC", `${field} ${value} resolves inside ufoRoot ${roots.ufoLexical} (${roots.ufoReal}) — the substrate is never written`);
+  }
+  if (resolved === roots.repoReal || resolved === roots.repoLexical) {
+    typed("INVALID_SPEC", `${field} ${value} resolves to the repo root itself — declare a subdirectory`);
+  }
+  if (inside(resolved, path.join(roots.repoReal, ".git")) || inside(resolved, path.join(roots.repoLexical, ".git"))) {
+    typed("INVALID_SPEC", `${field} ${value} resolves inside the repo's .git directory`);
+  }
 }
 
 function gitHeadBranch(repo) {
@@ -252,6 +331,17 @@ function loadSpec(specPath, authority) {
   const maxTime = raw.maxTime === undefined ? "3h" : String(raw.maxTime).trim();
   if (!MAXTIME_PATTERN.test(maxTime) || maxTime.startsWith("-")) typed("INVALID_SPEC", `maxTime ${JSON.stringify(raw.maxTime)} is not a safe token`);
 
+  const stateDir = resolveRepoPath(repo, raw.stateDir ?? `.tower/fleets/${raw.fleet}`, "stateDir");
+  const worktreeRoot = resolveRepoPath(repo, raw.worktreeRoot ?? `.tower/worktrees/${raw.fleet}`, "worktreeRoot");
+  const roots = {
+    repoLexical: repo,
+    ufoLexical: ufoRoot,
+    repoReal: realpathDeepest(repo).resolved,
+    ufoReal: realpathDeepest(ufoRoot).resolved,
+  };
+  assertSafeWriteRoot(stateDir, "stateDir", roots);
+  assertSafeWriteRoot(worktreeRoot, "worktreeRoot", roots);
+
   return {
     fleet: raw.fleet,
     repo,
@@ -259,8 +349,8 @@ function loadSpec(specPath, authority) {
     base,
     roundCeiling,
     maxTime,
-    stateDir: resolveRepoPath(repo, raw.stateDir ?? `.tower/fleets/${raw.fleet}`, "stateDir"),
-    worktreeRoot: resolveRepoPath(repo, raw.worktreeRoot ?? `.tower/worktrees/${raw.fleet}`, "worktreeRoot"),
+    stateDir,
+    worktreeRoot,
     missions: normalized,
   };
 }
@@ -379,6 +469,70 @@ function parseJsonOutput(text, label) {
   }
 }
 
+// ── wall state: the single source of liveness ───────────────────────────────
+
+/** Read the wall's mission view once. Every verb that reasons about an
+ * existing mission (launch reuse, status reconciliation, the close guard)
+ * reads liveness here, never from the launcher's own bookkeeping. */
+function readWall(spec) {
+  const result = wallCli(spec, "status", "--lite");
+  if (result.status !== 0) {
+    typed("WALL_STATUS_FAILED", `wall status --lite exited ${result.status}: ${(result.stderr || result.stdout).slice(0, 400)}`);
+  }
+  return parseJsonOutput(result.stdout, "wall status --lite");
+}
+
+function wallRowId(row) {
+  return row?.runId ?? row?.missionId ?? null;
+}
+
+/** Liveness for a row of the wall's LIVE view (`missions[]`). `levels.l1` is
+ * `isLiveStatus(status)` there — the manifest truth, and it always wins: a
+ * row's `phase` can instead come from the dispatcher's observation sidecar
+ * (`obs?.phase ?? statusPhase(mission)`) and a stale observation can disagree.
+ * A live-view row that carries no numeric level is reported LIVE, because the
+ * two consumers of this answer both act on "not live" — `close` completes the
+ * mission and `launch` re-launches the run id — and neither may happen by
+ * accident. Retired rows (`completed[]`/`stopped[]`) are NEVER passed here:
+ * they carry no `levels` and their `phase` is an observation, so liveness is
+ * sourced by array membership, not by guessing from the phase. */
+function wallRowLive(row) {
+  if (row === undefined || row === null) return false;
+  const l1 = row.levels?.l1;
+  if (typeof l1 === "number") return l1 > 0;
+  return true;
+}
+
+function wallRowPhase(row) {
+  return row?.phase ?? (wallRowLive(row) ? "working" : "unknown");
+}
+
+/** What the wall's record says the mission *is*: a retired row's own array
+ * (`completed`/`stopped`), else its live phase. Never used for liveness. */
+function wallRowDisposition(row) {
+  return row?.disposition ?? wallRowPhase(row);
+}
+
+/** The wall's live view keyed by run id: the ONLY place liveness is read from. */
+function liveViewById(registry) {
+  return new Map(registry.active.map((row) => [wallRowId(row), row]));
+}
+
+/** The state file `launch` wrote, or null when it is absent/unreadable — a
+ * missing fleet.json is exactly the divergence `status` must report, not an
+ * error. */
+function readFleetState(spec) {
+  const fleetPath = path.join(spec.stateDir, "fleet.json");
+  if (!existsSync(fleetPath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(fleetPath, "utf8"));
+    return parsed !== null && typeof parsed === "object" ? parsed : null;
+  } catch (error) {
+    warn(`fleet state ${fleetPath} is unreadable (${error.message}) — continuing without it`);
+    return null;
+  }
+}
+
 // ── verbs ───────────────────────────────────────────────────────────────────
 
 function buildPlan(spec, authority) {
@@ -405,6 +559,19 @@ function buildPlan(spec, authority) {
 
 function quoteArg(token) {
   return /^[\w@./:=+-]+$/.test(token) ? token : `'${token.replace(/'/g, `'\\''`)}'`;
+}
+
+/** Record one mission's failure exactly once. A mission can hit two causes
+ * (e.g. a reserved run id and a failed worktree add); the FIRST is the one
+ * that blocked it, the second is kept as `secondaryFailure`, and the mission
+ * is counted once so the LAUNCH_PARTIAL summary cannot read "2 of 1". */
+function recordMissionFailure(record, failures, code, detail) {
+  if (record.failure === undefined) {
+    record.failure = { code, detail };
+    failures.push({ id: record.id, detail });
+    return;
+  }
+  record.secondaryFailure = { code, detail };
 }
 
 function printPlanHuman(spec, authority, plan) {
@@ -479,12 +646,27 @@ function copySkill(name, spec, worktree) {
 function verbLaunch(spec, authority, options) {
   const plan = buildPlan(spec, authority);
   const wallCliPath = path.join(spec.ufoRoot, "scripts", "ufo-sighting");
-  // Open the wall once for the whole run.
+  // Open the wall once for the whole run, then read its mission view: a
+  // relaunch must adopt rows the wall already holds (the run id stays reserved
+  // while the row exists, so a second `launch` of the same id is a
+  // RUN_ID_CONFLICT, not a no-op). The decision is made from wall state.
   const opened = wallCli(spec, "open");
   if (opened.status !== 0) {
     typed("WALL_OPEN_FAILED", `bash ${wallCliPath} open exited ${opened.status}: ${(opened.stderr || opened.stdout).slice(0, 400)}`);
   }
-  mkdirSync(spec.stateDir, { recursive: true });
+  // Adoption is keyed by run id across the WHOLE registry — the live view plus
+  // retired rows, any fleet: the wall reserves a run id globally
+  // (`ensureUniqueMission` scans every registered row), so a row that holds our
+  // id blocks a fresh launch whether it is live or long retired.
+  const registry = wallRegistry(spec);
+  const { byId: registryById } = registry;
+  const liveById = liveViewById(registry);
+  const previousById = new Map((readFleetState(spec)?.missions ?? []).map((mission) => [mission.id, mission]));
+  try {
+    mkdirSync(spec.stateDir, { recursive: true });
+  } catch (error) {
+    typed("STATE_DIR_UNAVAILABLE", `cannot create stateDir ${spec.stateDir}: ${error.message}`);
+  }
 
   const records = [];
   const failures = [];
@@ -500,60 +682,159 @@ function verbLaunch(spec, authority, options) {
       promptPath: row.promptPath,
       skills: [],
       paneId: null,
+      paneReused: false,
+      panePhase: null,
+      retired: false,
+      promptReused: false,
+      worktreeReused: false,
+      worktreeRecreated: false,
       launchResult: null,
     };
 
-    // 1. worktree — reuse an existing one with a warning, never clobber it.
-    if (existsSync(row.worktree)) {
-      warn(`worktree ${row.worktree} already exists — reusing it as-is`);
-      record.worktreeReused = true;
-    } else {
-      const added = run([
-        "omp", "worktree", "add",
-        "-C", spec.repo,
-        "-b", row.branch,
-        row.worktree,
-        spec.base,
-      ]);
-      if (added.status !== 0) {
-        typed("WORKTREE_ADD_FAILED", `omp worktree add failed for ${row.id} (exit ${added.status}): ${(added.stderr || added.stdout).slice(0, 400)}`);
+    try {
+      // 1. Adopt the wall row this run id already owns, FIRST: the wall reserves
+      //    a run id globally, and a live pane must be recorded even when the
+      //    local worktree cannot be recreated (a failed `omp worktree add` used
+      //    to drop the pane reference on the floor).
+      const existing = registryById.get(row.id);
+      if (existing !== undefined) {
+        const live = wallRowLive(liveById.get(row.id));
+        record.paneId = existing.paneId ?? null;
+        record.panePhase = wallRowDisposition(existing);
+        record.paneReused = true;
+        record.retired = !live;
+        // Keep the prior run's raw pane receipt: adoption re-reads the wall, and
+        // overwriting the record with null would lose what launch actually saw.
+        const prior = previousById.get(row.id);
+        if (prior?.launchResult !== undefined && prior.launchResult !== null) {
+          record.launchResult = prior.launchResult;
+          record.launchResultFrom = "prior-state";
+        }
+        if (live) {
+          warn(`mission ${row.id} is already on the wall (${record.panePhase}) — reusing pane ${record.paneId ?? "?"}, not relaunching`);
+          if ((existing.fleet ?? null) !== spec.fleet) {
+            warn(`mission ${row.id} is registered under fleet ${existing.fleet ?? "(none)"}, not ${spec.fleet} — reusing the wall row as-is`);
+          }
+        } else {
+          // The run id is still reserved by a retired row, so no fresh pane can be
+          // launched under it. Report that instead of letting the wall answer a
+          // bare RUN_ID_CONFLICT, and keep the retired row's pane reference.
+          const missionRef = existing.missionId ?? row.id;
+          const remedy = record.panePhase === "suspended"
+            ? `the wall can revive this same run id (\`bash <ufoRoot>/scripts/ufo-sighting resume --mission ${missionRef} -- <omp argv>\`), or retire the row (\`bash <ufoRoot>/scripts/ufo-sighting remove --mission ${missionRef}\`) or use a new mission id`
+            : `retire the row (\`bash <ufoRoot>/scripts/ufo-sighting remove --mission ${missionRef}\`) or use a new mission id`;
+          const detail = `run id ${row.id} is still registered by a ${record.panePhase} wall row — a fresh pane cannot launch under a reserved run id; ${remedy}`;
+          recordMissionFailure(record, failures, "RUN_ID_RESERVED", detail);
+          warn(`mission ${row.id} is ${record.panePhase} on the wall and its run id is still reserved — recording RUN_ID_RESERVED, not relaunching`);
+        }
       }
-    }
 
-    // 2. skills — copy each named skill into the worktree; missing is a warning.
-    for (const skill of mission.skills) {
-      const source = copySkill(skill, spec, row.worktree);
-      if (source === null) warn(`skill ${skill} not found for mission ${row.id} (searched repo, ufoRoot, ~/.agents/skills) — continuing`);
-      record.skills.push({ name: skill, source });
-    }
+      // 2. worktree — reuse an existing one with a warning, never clobber it.
+      //    A failed add is this mission's failure, not a mid-fleet abort: the
+      //    panes already up must stay recorded in fleet.json.
+      if (existsSync(row.worktree)) {
+        warn(`worktree ${row.worktree} already exists — reusing it as-is`);
+        record.worktreeReused = true;
+      } else {
+        const adoptedWithoutTree = record.paneReused;
+        if (adoptedWithoutTree) {
+          warn(`mission ${row.id} reuses a wall row but its worktree ${row.worktree} is missing`);
+        }
+        const added = run([
+          "omp", "worktree", "add",
+          "-C", spec.repo,
+          "-b", row.branch,
+          row.worktree,
+          spec.base,
+        ]);
+        if (added.status !== 0) {
+          // The tree is still gone, so only now is the fact worth recording.
+          if (adoptedWithoutTree) record.worktreeMissing = true;
+          recordMissionFailure(record, failures, "WORKTREE_ADD_FAILED", `omp worktree add exited ${added.status}: ${(added.stderr || added.stdout).slice(0, 400)}`);
+          records.push(record);
+          continue;
+        }
+        if (adoptedWithoutTree) record.worktreeRecreated = true;
+      }
 
-    // 3. prompt into the state dir (+ per-mission session dir).
-    const sessionsDir = path.join(spec.stateDir, "sessions", row.id);
-    mkdirSync(sessionsDir, { recursive: true });
-    writeFileSync(row.promptPath, row.prompt);
+      // 3. skills — copy each named skill into the worktree; missing is a warning.
+      for (const skill of mission.skills) {
+        const source = copySkill(skill, spec, row.worktree);
+        if (source === null) warn(`skill ${skill} not found for mission ${row.id} (searched repo, ufoRoot, ~/.agents/skills) — continuing`);
+        record.skills.push({ name: skill, source });
+      }
 
-    // 5. launch the pane; capture the wall's JSON result.
-    const launched = wallCli(spec, ...row.launchArgv.slice(2));
-    if (launched.status !== 0) {
-      let detail = (launched.stderr || launched.stdout).slice(0, 400);
-      try {
-        const failure = JSON.parse(launched.stdout || launched.stderr);
-        if (failure?.code) detail = `${failure.code}: ${failure.message ?? detail}`;
-      } catch { /* verbatim text is the fallback detail */ }
-      // Partial-failure policy: record the failure, keep the panes already
-      // launched, and continue. The fleet state file is written either way, so
-      // an operator can see exactly which missions came up.
-      record.failure = { code: "LAUNCH_FAILED", detail };
-      failures.push({ id: row.id, detail });
+      // 4. prompt into the state dir (+ per-mission session dir). The rendered
+      //    prompt is the source of truth, so a relaunch regenerates it from the
+      //    spec; only byte-identical content is left untouched (no churn, and
+      //    `promptReused` records which happened — a hand-edited prompt is
+      //    overwritten).
+      const sessionsDir = path.join(spec.stateDir, "sessions", row.id);
+      mkdirSync(sessionsDir, { recursive: true });
+      const existingPrompt = existsSync(row.promptPath) ? readFileSync(row.promptPath, "utf8") : null;
+      if (existingPrompt === row.prompt) {
+        record.promptReused = true;
+      } else {
+        writeFileSync(row.promptPath, row.prompt);
+      }
+
+      // 5. launch the pane only when no wall row was adopted: a second wall
+      //    launch of a reserved run id is RUN_ID_CONFLICT, which is the failure
+      //    this whole adoption path exists to avoid.
+      if (record.paneReused) {
+        records.push(record);
+        continue;
+      }
+      const launched = wallCli(spec, ...row.launchArgv.slice(2));
+      let failure = null;
+      let result = null;
+      if (launched.status !== 0) {
+        let detail = (launched.stderr || launched.stdout).slice(0, 400);
+        try {
+          const parsed = JSON.parse(launched.stdout || launched.stderr);
+          if (parsed?.code) detail = `${parsed.code}: ${parsed.message ?? detail}`;
+          // A run id can still be reserved by a row the registry cannot see —
+          // a ghost row (manifest-live, pane dead) is in none of its arrays.
+          // The wall's refusal is the authority; name the stale count when it
+          // is the likely cause instead of leaving a bare conflict.
+          if (parsed?.code === "RUN_ID_CONFLICT" && registry.staleCount > 0) {
+            detail = `${detail}; the wall also reports ${registry.staleCount} stale mission(s) with no live pane — \`bash <ufoRoot>/scripts/ufo-sighting reconcile\` may clear the reservation`;
+          }
+        } catch { /* verbatim text is the fallback detail */ }
+        failure = { code: "LAUNCH_FAILED", detail };
+      } else {
+        // A zero exit with unparseable stdout is a failure too: the pane may be
+        // up but its id is unknown, so recording it as a failure keeps fleet.json
+        // written instead of aborting mid-fleet through parseJsonOutput.
+        try {
+          result = JSON.parse(launched.stdout);
+        } catch {
+          failure = { code: "WALL_OUTPUT", detail: `wall launch for ${row.id} did not print JSON: ${launched.stdout.slice(0, 200)}` };
+        }
+      }
+      if (failure !== null) {
+        // Partial-failure policy: record the failure, keep the panes already
+        // launched, and continue. The fleet state file is written either way, so
+        // an operator can see exactly which missions came up.
+        recordMissionFailure(record, failures, failure.code, failure.detail);
+        records.push(record);
+        continue;
+      }
+      record.launchResult = result;
+      const rowView = (result.missions ?? []).find((m) => m.runId === row.id || m.missionId === row.id);
+      record.paneId = rowView?.paneId ?? null;
+      if (record.paneId === null) warn(`wall launch for ${row.id} reported no pane id`);
       records.push(record);
-      continue;
+    } catch (error) {
+      // A throw inside one mission (a missing binary, an fs error) must not lose
+      // the missions already up either: it is that mission's failure, recorded,
+      // and the run still writes fleet.json.
+      const code = error instanceof TypedError ? error.code : "MISSION_FAILED";
+      const detail = error instanceof TypedError ? error.message : String(error?.message ?? error);
+      recordMissionFailure(record, failures, code, detail);
+      warn(`mission ${row.id} failed (${code}): ${detail}`);
+      records.push(record);
     }
-    const result = parseJsonOutput(launched.stdout, `wall launch for ${row.id}`);
-    record.launchResult = result;
-    const rowView = (result.missions ?? []).find((m) => m.runId === row.id || m.missionId === row.id);
-    record.paneId = rowView?.paneId ?? null;
-    if (record.paneId === null) warn(`wall launch for ${row.id} reported no pane id`);
-    records.push(record);
   }
 
   // 6. fleet state, written only under <stateDir>.
@@ -585,7 +866,14 @@ function verbLaunch(spec, authority, options) {
     emitJson({ ok: failures.length === 0, verb: "launch", fleet: spec.fleet, fleetStatePath: fleetPath, failures, missions: records.map(({ launchResult, ...rest }) => ({ ...rest, launchResultRecorded: Boolean(launchResult) })) });
   } else {
     for (const record of records) {
-      process.stdout.write(`launched ${record.id} · pane ${record.paneId ?? "?"} · worktree ${record.worktree}\n`);
+      if (record.failure !== undefined) {
+        process.stdout.write(`FAILED ${record.id} · ${record.failure.code} · worktree ${record.worktree}\n`);
+        if (record.secondaryFailure !== undefined) {
+          process.stdout.write(`       ${record.id} also hit ${record.secondaryFailure.code}\n`);
+        }
+      } else {
+        process.stdout.write(`launched ${record.id} · pane ${record.paneId ?? "?"}${record.paneReused ? " (reused)" : ""} · worktree ${record.worktree}\n`);
+      }
     }
     process.stdout.write(`fleet state: ${fleetPath}\n`);
   }
@@ -604,37 +892,193 @@ function roundReceipts(stateDir, missionId) {
     .map((name) => path.join(roundsDir, name));
 }
 
+/** Every row the wall still registers for a run id: the live view plus the
+ * retired history the wall keeps in its own `completed[]`/`stopped[]` arrays.
+ * A run id is reserved while ANY of those rows exists (`ensureUniqueMission`
+ * scans the whole manifest), so adoption, launch reuse, status reconciliation,
+ * and close resolution all read this registry — never the live view alone, or
+ * a retired mission would look absent while its id still blocks a fresh pane. */
+function wallRegistry(spec) {
+  const wall = readWall(spec);
+  const active = Array.isArray(wall.missions) ? wall.missions : [];
+  const retired = [
+    // Tagged with the array the row came from, using the wall's OWN vocabulary
+    // (`statusPhase`: completed row -> "completed", stopped row -> "suspended",
+    // which is exactly what the wall's `resume` verb gates on). A retired row's
+    // own `phase` is a dispatcher observation and can be stale, so the array is
+    // the authoritative input everywhere liveness or status is reported.
+    ...(Array.isArray(wall.completed) ? wall.completed : []).map((row) => ({ ...row, disposition: "completed" })),
+    ...(Array.isArray(wall.stopped) ? wall.stopped : []).map((row) => ({ ...row, disposition: "suspended" })),
+  ];
+  // The retired arrays are the wall's display slice, not the whole manifest:
+  // when they are truncated, a run id can be reserved invisibly, so the
+  // fallback (the wall refusing the launch itself) is the only honest answer.
+  const truncated = (count, rows) => Number.isSafeInteger(count) && Array.isArray(rows) && rows.length < count;
+  if (truncated(wall.completedMissionCount, wall.completed) || truncated(wall.stoppedMissionCount, wall.stopped)) {
+    warn(`wall registry view is truncated (completed ${Array.isArray(wall.completed) ? wall.completed.length : 0}/${wall.completedMissionCount ?? "?"}, stopped ${Array.isArray(wall.stopped) ? wall.stopped.length : 0}/${wall.stoppedMissionCount ?? "?"}) — a hidden retired row still reserves its run id`);
+  }
+  return {
+    wall,
+    active,
+    retired,
+    // A ghost row — live in the manifest, pane dead — is in NONE of the three
+    // arrays (missions[] is pane-filtered, completed[]/stopped[] are
+    // status-filtered). `staleMissionCount` is the only field that names it,
+    // and such a row still holds L1 capacity, so the verbs surface it.
+    staleCount: Number.isSafeInteger(wall.staleMissionCount) ? wall.staleMissionCount : 0,
+    // The wall's own word for itself: "attached" when it is up, "absent" when
+    // there is no wall session (getStatus returns that at exit 0 with empty
+    // arrays), so a mutation verb can refuse instead of silently no-oping.
+    wallStatus: typeof wall.status === "string" ? wall.status : null,
+    hatch: typeof wall.hatch === "string" ? wall.hatch : null,
+    fleetRows: active.filter((row) => (row.fleet ?? null) === spec.fleet),
+    // Live rows LAST: if a run id ever appears in both views, the live row's
+    // paneId/phase must win over a retired projection of the same mission.
+    byId: new Map([...retired, ...active].map((row) => [wallRowId(row), row])),
+  };
+}
+
 function verbStatus(spec, authority, options) {
-  const result = wallCli(spec, "status", "--lite");
-  if (result.status !== 0) {
-    typed("WALL_STATUS_FAILED", `wall status --lite exited ${result.status}: ${(result.stderr || result.stdout).slice(0, 400)}`);
+  const { wall, active: allWallRows, retired: allRetiredRows, fleetRows, staleCount, wallStatus, hatch } = wallRegistry(spec);
+  const state = readFleetState(spec);
+  const stateMissions = Array.isArray(state?.missions) ? state.missions : [];
+
+  // Reconcile the wall against the state file `launch` wrote, in both
+  // directions: a mission on the wall that fleet.json never recorded, and a
+  // mission fleet.json records that the wall does not report. Status is
+  // read-only — divergences are reported, never repaired here.
+  const stateIds = new Set(stateMissions.map((mission) => mission.id));
+  const specIds = new Set(spec.missions.map((mission) => mission.id));
+  const ownIds = new Set([...stateIds, ...specIds]);
+  // Relevant rows: this fleet's own rows, plus any row holding a run id this
+  // fleet owns. `launch` adopts those globally (the wall reserves a run id
+  // across every fleet), so status must see them too or the two verbs would
+  // disagree about the same mission.
+  const relevant = [...fleetRows];
+  const seen = new Set(fleetRows.map(wallRowId));
+  for (const row of allWallRows) {
+    const id = wallRowId(row);
+    if (seen.has(id) || !ownIds.has(id)) continue;
+    seen.add(id);
+    relevant.push(row);
   }
-  const wall = parseJsonOutput(result.stdout, "wall status --lite");
-  const fleetMissions = (wall.missions ?? []).filter((mission) => (mission.fleet ?? null) === spec.fleet);
-  const rows = fleetMissions.map((mission) => ({
-    id: mission.runId ?? mission.missionId,
-    missionId: mission.missionId,
-    title: mission.title,
-    status: mission.status ?? mission.phase ?? "unknown",
-    paneId: mission.paneId,
-    rounds: roundReceipts(spec.stateDir, mission.runId ?? mission.missionId).map((file) => path.basename(file)),
-  }));
-  if (rows.length < spec.missions.length) {
-    const known = new Set(rows.map((row) => row.id));
-    for (const mission of spec.missions) {
-      if (!known.has(mission.id)) rows.push({ id: mission.id, missionId: null, title: mission.title, status: "not-on-wall", paneId: null, rounds: roundReceipts(spec.stateDir, mission.id).map((file) => path.basename(file)) });
+  // The wall keeps no pane for a retired mission, so it drops out of
+  // `missions[]` and moves to `completed[]`/`stopped[]` with the authoritative
+  // terminal state. Those rows are tracked history, not missions missing from
+  // the wall — fleet.json still records them.
+  const retiredRows = allRetiredRows.filter((row) => ownIds.has(wallRowId(row)));
+  const retiredById = new Map(retiredRows.map((row) => [wallRowId(row), row]));
+  const trackedIds = new Set([...relevant.map(wallRowId), ...retiredById.keys()]);
+  const onWallNotInState = [...new Set([...relevant.map(wallRowId), ...retiredById.keys()])].filter((id) => !stateIds.has(id));
+  const inStateNotOnWall = stateMissions.map((mission) => mission.id).filter((id) => !trackedIds.has(id));
+  const foreignRows = relevant.filter((row) => (row.fleet ?? null) !== spec.fleet);
+
+  const rows = relevant.map((row) => {
+    const id = wallRowId(row);
+    const rowFleet = row.fleet ?? null;
+    return {
+      id,
+      missionId: row.missionId ?? null,
+      title: row.title,
+      source: "wall",
+      status: wallRowPhase(row),
+      live: wallRowLive(row),
+      paneId: row.paneId ?? null,
+      fleet: rowFleet,
+      foreignFleet: rowFleet === spec.fleet ? null : rowFleet,
+      inFleetState: stateIds.has(id),
+      inSpec: specIds.has(id),
+      rounds: roundReceipts(spec.stateDir, id).map((file) => path.basename(file)),
+    };
+  });
+  // Missions the state file (or, failing that, the spec) knows about but the
+  // wall does not report: never launched, or removed from the wall since.
+  const known = new Set(rows.map((row) => row.id));
+  const notOnWall = [
+    ...stateMissions.map((mission) => ({ id: mission.id, title: mission.title, failure: mission.failure?.code ?? null })),
+    ...spec.missions.map((mission) => ({ id: mission.id, title: mission.title, failure: null })),
+  ];
+  for (const mission of notOnWall) {
+    if (known.has(mission.id)) continue;
+    known.add(mission.id);
+    const retiredRow = retiredById.get(mission.id);
+    if (retiredRow !== undefined) {
+      rows.push({
+        id: mission.id,
+        missionId: retiredRow.missionId ?? null,
+        title: retiredRow.title ?? mission.title,
+        source: "wall-retired",
+        status: wallRowDisposition(retiredRow),
+        live: false,
+        retired: true,
+        retiredAt: retiredRow.completedAt ?? retiredRow.stoppedAt ?? null,
+        paneId: retiredRow.paneId ?? null,
+        inFleetState: stateIds.has(mission.id),
+        inSpec: specIds.has(mission.id),
+        failure: mission.failure,
+        rounds: roundReceipts(spec.stateDir, mission.id).map((file) => path.basename(file)),
+      });
+      continue;
     }
+    rows.push({
+      id: mission.id,
+      missionId: null,
+      title: mission.title,
+      source: stateIds.has(mission.id) ? "state" : "spec",
+      status: "not-on-wall",
+      live: false,
+      paneId: null,
+      inFleetState: stateIds.has(mission.id),
+      inSpec: specIds.has(mission.id),
+      failure: mission.failure,
+      rounds: roundReceipts(spec.stateDir, mission.id).map((file) => path.basename(file)),
+    });
   }
+
+  const fleetStatePath = path.join(spec.stateDir, "fleet.json");
   if (options.json) {
-    emitJson({ ok: true, verb: "status", fleet: spec.fleet, wallStatus: wall.status ?? "present", stateDir: spec.stateDir, missions: rows });
+    emitJson({
+      ok: true,
+      verb: "status",
+      fleet: spec.fleet,
+      wallStatus: wall.status ?? "present",
+      hatch: hatch ?? null,
+      stateDir: spec.stateDir,
+      reconciliation: {
+        fleetStatePath,
+        fleetStatePresent: state !== null,
+        onWallNotInState,
+        inStateNotOnWall,
+        foreignFleetRows: foreignRows.map(wallRowId),
+        retiredRows: [...retiredById.keys()],
+        staleMissionCount: staleCount,
+      },
+      missions: rows,
+    });
   } else {
-    const header = ["id", "status", "paneId", "rounds"];
-    const table = rows.map((row) => [row.id, row.status, row.paneId ?? "-", row.rounds.join(",") || "-"]);
+    const header = ["id", "source", "status", "live", "paneId", "rounds"];
+    const table = rows.map((row) => [row.id, row.source, row.status, row.live ? "live" : "-", row.paneId ?? "-", row.rounds.join(",") || "-"]);
     const widths = header.map((name, i) => Math.max(name.length, ...table.map((cells) => cells[i].length), 1));
     const line = (cells) => cells.map((cell, i) => cell.padEnd(widths[i])).join("  ").trimEnd();
     process.stdout.write(`fleet ${spec.fleet} · wall ${wall.status ?? "present"} · ${rows.length} mission(s)\n`);
     process.stdout.write(line(header) + "\n");
     for (const cells of table) process.stdout.write(line(cells) + "\n");
+    if (!state) process.stdout.write(`reconcile: no fleet state at ${fleetStatePath} (launch has not run, or it was removed)\n`);
+    if (onWallNotInState.length > 0) {
+      process.stdout.write(`reconcile: on the wall but missing from fleet state: ${onWallNotInState.join(", ")}\n`);
+    }
+    if (inStateNotOnWall.length > 0) {
+      process.stdout.write(`reconcile: in fleet state but not on the wall: ${inStateNotOnWall.join(", ")}\n`);
+    }
+    if (foreignRows.length > 0) {
+      process.stdout.write(`reconcile: wall row(s) registered under another fleet for run id(s) this fleet tracks: ${foreignRows.map((row) => `${wallRowId(row)} (${row.fleet ?? "none"})`).join(", ")}\n`);
+    }
+    if (staleCount > 0) {
+      process.stdout.write(`reconcile: the wall reports ${staleCount} stale mission(s) with no live pane and no registry row (they still hold L1 capacity) — run \`bash <ufoRoot>/scripts/ufo-sighting reconcile\`\n`);
+    }
+    if (wallStatus === "absent") {
+      process.stdout.write("reconcile: the wall reports status \"absent\" (no wall session) — every mission below is reported not-on-wall; nothing is running\n");
+    }
   }
   return EXIT_OK;
 }
@@ -645,24 +1089,77 @@ function verbClose(spec, authority, options) {
     targets = spec.missions.filter((mission) => mission.id === options.mission);
     if (targets.length === 0) typed("UNKNOWN_MISSION", `--mission ${options.mission} is not in fleet ${spec.fleet}`);
   }
+  // The wall is the only authority on whether a pane is live. Refuse the whole
+  // close while any target is live: completing one mission of a fleet while a
+  // sibling still runs tears the fleet apart for a mission that is not done.
+  const registry = wallRegistry(spec);
+  const registryById = registry.byId;
+  const liveById = liveViewById(registry);
+  const live = targets.filter((mission) => wallRowLive(liveById.get(mission.id)));
+  if (registry.wallStatus === "absent") {
+    // The wall reports itself absent (no session): every target would resolve
+    // as "absent" and the run would exit 0 having completed nothing. Refuse.
+    typed("WALL_ABSENT", `the sighting wall reports status "absent" — nothing was completed; open it first (\`bash <ufoRoot>/scripts/ufo-sighting open\`)`);
+  }
+  if (live.length > 0 && !options.force) {
+    typed("PANE_LIVE", `mission(s) ${live.map((mission) => mission.id).join(", ")} still live on the wall; refusing to complete a live mission (pass --force to complete anyway — their panes keep running)`);
+  }
+  if (live.length > 0) {
+    warn(`--force: completing live mission(s) ${live.map((mission) => mission.id).join(", ")} — their panes keep running`);
+  }
   const results = [];
+  const failures = [];
   for (const mission of targets) {
+    const row = registryById.get(mission.id);
+    const worktree = path.join(spec.worktreeRoot, mission.id);
+    if (row === undefined) {
+      // Nothing the wall's registry reports. A ghost row (manifest-live, pane
+      // dead) lands here too, and it still holds L1 capacity — so name the
+      // wall's own reconcile verb instead of just "nothing to complete".
+      const stale = registry.staleCount > 0
+        ? `; the wall reports ${registry.staleCount} stale mission(s) with no live pane — \`bash <ufoRoot>/scripts/ufo-sighting reconcile\` may be required`
+        : "";
+      warn(`mission ${mission.id} is not in the wall's registry — nothing to complete${stale}`);
+      results.push({ id: mission.id, status: "absent", completed: false, paneLive: false, worktree });
+      continue;
+    }
+    const paneLive = wallRowLive(liveById.get(mission.id));
+    if ((row.fleet ?? null) !== null && (row.fleet ?? null) !== spec.fleet) {
+      warn(`mission ${mission.id} is registered under fleet ${row.fleet} — completing it from fleet ${spec.fleet} by run id`);
+    }
     const completed = wallCli(spec, "complete", "--mission", mission.id, "--note", "tower-fleet close");
     const detail = (completed.stdout || completed.stderr).slice(0, 200);
     if (completed.status !== 0) {
-      typed("COMPLETE_FAILED", `wall complete failed for ${mission.id} (exit ${completed.status}): ${detail}`);
+      // Same partial-state policy as launch: record this mission's failure, keep
+      // the completions that already landed, and report every outcome instead of
+      // aborting with nothing but a typed error.
+      failures.push({ id: mission.id, detail });
+      warn(`wall complete failed for ${mission.id} (exit ${completed.status}): ${detail}`);
+      results.push({ id: mission.id, status: completed.status, completed: false, paneLive, phase: wallRowPhase(row), failure: { code: "COMPLETE_FAILED", detail }, worktree });
+      continue;
     }
-    results.push({ id: mission.id, status: completed.status, worktree: path.join(spec.worktreeRoot, mission.id) });
+    results.push({ id: mission.id, status: completed.status, completed: true, paneLive, phase: wallRowPhase(row), worktree });
   }
   if (options.json) {
-    emitJson({ ok: true, verb: "close", fleet: spec.fleet, missions: results, worktreeRemoval: "manual-only" });
+    emitJson({ ok: failures.length === 0, verb: "close", fleet: spec.fleet, forced: Boolean(options.force), failures, missions: results, worktreeRemoval: "manual-only" });
   } else {
-    for (const row of results) process.stdout.write(`completed wall mission ${row.id}\n`);
+    for (const row of results) {
+      if (row.completed) {
+        process.stdout.write(`completed wall mission ${row.id}${row.paneLive ? " (pane left running: --force)" : ""}\n`);
+      } else if (row.status === "absent") {
+        process.stdout.write(`skipped ${row.id} — not in the wall's registry\n`);
+      } else {
+        process.stdout.write(`FAILED ${row.id} — exit ${row.status}: ${row.failure?.detail ?? ""}\n`);
+      }
+    }
     process.stdout.write("\nWorktrees are NEVER removed automatically. Preserve unmerged work first (inspect, then integrate or keep the branch).\n");
     process.stdout.write(`For each mission, retire its worktree by path only — never \`omp worktree clear\`:\n`);
     for (const row of results) {
       process.stdout.write(`  git -C ${spec.repo} worktree remove ${row.worktree}\n`);
     }
+  }
+  if (failures.length > 0) {
+    typed("COMPLETE_FAILED", `${failures.length} of ${targets.length} missions failed to complete (${failures.map((failure) => failure.id).join(", ")}); the completions that did land are recorded above`);
   }
   return EXIT_OK;
 }
@@ -676,7 +1173,7 @@ function parseArgs(argv) {
     verb = args.shift();
     if (!VERBS.has(verb)) usageExit(`unknown verb ${verb}`);
   }
-  const options = { verb, spec: null, apply: false, json: false, mission: null };
+  const options = { verb, spec: null, apply: false, json: false, mission: null, force: false };
   while (args.length > 0) {
     const arg = args.shift();
     if (arg === "--spec") {
@@ -689,8 +1186,10 @@ function parseArgs(argv) {
     } else if (arg === "--mission") {
       if (args.length === 0) usageExit("--mission needs an id");
       options.mission = args.shift();
+    } else if (arg === "--force") {
+      options.force = true;
     } else if (arg === "--help" || arg === "-h") {
-      process.stdout.write("usage: node sighting/tower-fleet.mjs [plan|launch|status|close] --spec <fleet.json> [--apply] [--mission <id>] [--json]\n");
+      process.stdout.write("usage: node sighting/tower-fleet.mjs [plan|launch|status|close] --spec <fleet.json> [--apply] [--mission <id>] [--force] [--json]\n");
       process.exit(EXIT_OK);
     } else {
       usageExit(`unknown argument ${arg}`);
@@ -698,6 +1197,7 @@ function parseArgs(argv) {
   }
   if (options.spec === null) usageExit("--spec is required");
   if (options.mission !== null && options.verb !== "close") usageExit("--mission only applies to close");
+  if (options.force && options.verb !== "close") usageExit("--force only applies to close");
   if ((options.verb === "launch" || options.verb === "close") && !options.apply) {
     typed("MUTATION_REQUIRES_APPLY", `${options.verb} mutates the wall and the worktrees; pass --apply to confirm`);
   }
