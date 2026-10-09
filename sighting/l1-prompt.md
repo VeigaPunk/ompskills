@@ -123,18 +123,25 @@ you may invent.
    `node {{validator}} record --registry <reportDir>/swarm-registry.json
    --assignments '{"<Name>": "<agentId>", …}'` — because a later wave can only
    resume a member whose handle is recorded.
-6. **Judge as the mission's own Pareto integrator.** Accept only moves that
-   improve at least one axis and regress none; record every rejected move with
-   its evidence. Integrate accepted work yourself in `{{worktree}}`: a read-only
-   lane's finding is re-applied there under your judgment; a writer lane's change
-   is taken from its branch (`git checkout <lane-branch> -- <paths>`). Commit
-   path-scoped (`git add -- <paths> && git commit -- <paths>`) — the scope is
-   what enters a commit, and state-directory artifacts never do.
+6. **Judge as the mission's own Pareto integrator.** The round's axis set is the
+   measuring stick: for each move, name the axis it moves and the observation you
+   measured. Accept only moves that improve at least one axis and regress none —
+   an unmeasured claim is unknown, never an accept, and a move touching a path
+   outside `{{scope}}` is rejected with that reason rather than integrated.
+   Re-score the surviving set after every accept, and record every rejected move
+   with its evidence. Integrate accepted work yourself in `{{worktree}}`: a
+   read-only lane's finding is re-applied there under your judgment; a writer
+   lane's change is taken from its branch (`git checkout <lane-branch> -- <paths>`)
+   — that lane's worktree and branch were created before dispatch, per Tower
+   duties below. Commit path-scoped
+   (`git add -- <paths> && git commit -- <paths>`) — the scope is what enters a
+   commit, and state-directory artifacts never do.
 7. **Write the round receipt** to `{{stateDir}}/rounds/{{missionId}}-r<N>.md`,
    with `<N>` the integer `1 +` the number of receipt files already there (the
    launcher orders these files by that number, so a literal `<N>` misreports the
-   round): axes, wave plan, lane outcomes, accepted/rejected moves, evidence, and
-   an honest continue/stop decision. Then continue or stop honestly.
+   round): axes, wave plan, lane outcomes, each accepted and rejected move with
+   the evidence that decided it, and an honest continue/stop decision. Then
+   continue or stop honestly.
 
 ## Tower duties
 
