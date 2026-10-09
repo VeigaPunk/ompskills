@@ -613,6 +613,10 @@ say("scopes — per-entry refusal taxonomy");
     refuseEntry(`scope entry ${JSON.stringify(entry)} absolute`, entry,
       `mission tf-a scope entry ${entry} must be repo-relative, not absolute`);
   }
+  for (const entry of [".", "src/.", "src/./child"]) {
+    refuseEntry(`scope entry ${JSON.stringify(entry)} dot segment`, entry,
+      `mission tf-a scope entry ${entry} must name a repo-relative subpath, not the repo root or a dot segment`);
+  }
   for (const entry of ["src/../etc", "..", "src//x"]) {
     refuseEntry(`scope entry ${JSON.stringify(entry)} escapes`, entry,
       `mission tf-a scope entry ${entry} must stay inside the repo`);

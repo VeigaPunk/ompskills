@@ -183,7 +183,9 @@ write site. This prevents the planted child-symlink escapes reproduced in F1.
 Regression evidence: `test/tower-fleet.test.mjs` has five fixture-only symlink
 probes (prompt, sessions parent, fleet state, worktree slot, and skill target
 parent); all refuse as `INVALID_SPEC` before the wall stub is called, and the
-fixture `config/ufo.json` remains byte-identical. The full launcher suite passes.
+fixture `config/ufo.json` remains byte-identical. The scope gate also rejects
+`.` and embedded `.` segments, closing F2's repo-root-prefix bypass. The
+launcher suite and live wave suite pass.
 
 Residual limitation: a same-user process can race a symlink replacement between
 the final path check and the filesystem operation; bind-mount and adversarial

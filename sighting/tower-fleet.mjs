@@ -176,6 +176,9 @@ function normalizeScopePath(raw, missionId) {
   if (typeof raw !== "string" || raw.trim() === "") typed("INVALID_SPEC", `mission ${missionId} scope entry must be a non-empty string`);
   const value = raw.trim().replace(/^\.\//, "").replace(/\/+$/, "");
   if (value === "" ) typed("INVALID_SPEC", `mission ${missionId} scope entry ${raw} does not name a repo-relative path`);
+  if (value === "." || value.split("/").includes(".")) {
+    typed("INVALID_SPEC", `mission ${missionId} scope entry ${raw} must name a repo-relative subpath, not the repo root or a dot segment`);
+  }
   if (path.isAbsolute(value) || value.startsWith("~")) {
     typed("INVALID_SPEC", `mission ${missionId} scope entry ${raw} must be repo-relative, not absolute`);
   }
