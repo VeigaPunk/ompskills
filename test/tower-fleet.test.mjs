@@ -248,7 +248,7 @@ function writeRawSpec(text) {
 }
 
 // The usage line as usageExit emits it (split("\n") drops the trailing newline).
-const USAGE_TEXT = "usage: node sighting/tower-fleet.mjs [plan|launch|status|close] --spec <fleet.json> [--apply] [--mission <id>] [--json]";
+const USAGE_TEXT = "usage: node sighting/tower-fleet.mjs [plan|launch|status|close] --spec <fleet.json> [--apply] [--mission <id>] [--force] [--json]";
 
 /** Usage refusal contract: exit 64, empty stdout, typed USAGE line + usage line. */
 function expectUsage(id, result, message) {
@@ -1599,10 +1599,12 @@ say("isolation — shell-outs are spec-derived; the stub wall is the only spawn"
     check("isolation: status argv is [status --lite]", tokensOf(afterStatus[0]).join(" ") === "status --lite", tokensOf(afterStatus[0]).join(" "));
   }
   // close --apply must complete each mission against the same temp stub.
-  const close = launcher(["close", "--spec", isoSpec, "--apply", "--json"]);
+  const close = launcher(["close", "--spec", isoSpec, "--apply", "--force", "--json"]);
   check("isolation: close --apply exit 0", close.status === 0, `got ${close.status}; stderr ${close.stderr.slice(0, 200)}`);
   const allBlocks = wallBlocks();
-  check("isolation: close spawned complete once per mission", allBlocks.length === 3, `blocks=${allBlocks.length}`);
+  check("isolation: close reads wall registry and skips missions absent from it",
+    allBlocks.length === 2 && allBlocks.every((block) => tokensOf(block).join(" ") === "status --lite"),
+    `blocks=${allBlocks.length}; argv=${allBlocks.map((block) => tokensOf(block).join(" ")).join(" | ")}`);
   check("isolation: every spawn was the temp stub", allBlocks.every((block) => block.startsWith(`SCRIPT=${isoCli}`)),
     allBlocks.map((block) => block.split("\n")[0]).join("; "));
   const logText = existsSync(argvLog) ? readFileSync(argvLog, "utf8") : "";
