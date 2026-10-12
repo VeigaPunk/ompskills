@@ -30,7 +30,7 @@
 # Only the fourteen ufo seats are checked that way, which leaves the omp roles,
 # the effort variants and the pool-member aliases unguarded by any gate. This
 # file therefore holds itself to the STRICTEST rule everywhere: every route in
-# it — every modelRoles value and every step of all twenty-nine chains, seat or
+# it — every modelRoles value and every step of all forty-five chains, seat or
 # not — is splitRoute-legal, and every chain is bare-distinct against its own
 # primary. host/apply.mjs enforces that over the whole table, so a typo in an
 # alias no seat consumes still fails the dry run instead of surfacing at
@@ -38,16 +38,13 @@
 # effort suffix, so it appears nowhere here even in the omp-role chains that
 # would tolerate it; and no chain steps its own primary down to a lower effort.
 #
-# Model pool = the union of the providers authenticated on this host
-# (`omp models`: alibaba-token-plan 11, cursor 81, kimi-code 7, openai-codex 8,
-# zai 18) and the ufo-fsd-alpha seat-routing pool (google-antigravity, devin).
-# Every selector in that union appears below as a role value or a chain step,
-# so each one is reachable in some cascade. Selectors on providers this host
-# holds no credentials for are pool members, not promises: they become live
-# hops the moment that provider is logged in, and cost one provider error each
-# until then. `enabledModels` and `enabledProviders` stay unset on purpose —
-# both are allowlist filters, and filling them with unauthenticated selectors
-# would hide working models.
+# Model pool = the models the m_* lanes name, on the providers authenticated
+# on this host. `enabledModels` below is set to exactly that set: every role
+# value and every chain step appears in it, so nothing a cascade can reach is
+# hidden, and everything else the bundled catalog carries — deepseek-v4-pro,
+# kimi-for-coding*, the devin fusion family, superseded gpt-5.6, dated
+# variants — is out of scope for the pickers, cycling and /model.
+# `enabledProviders` stays unset: it filters discovery sources, not models.
 #
 # The two providers the operator excluded are deliberately absent from this
 # file — no route and no comment names either one, so a grep for them comes
@@ -72,11 +69,14 @@
 # Chain keys come in three forms, one chain per route, no duplicates:
 # role names (default/smol/slow/plan), the ufo seat aliases (kept byte-for-byte
 # with the seat-routing table so regenerating the mirror is a no-op), and
-# concrete selectors for the host flagship lanes. The resolver prefers the
-# ALIAS key over the concrete one, so a seat always gets its bucket cascade and
-# the concrete chain fires only when something selects that selector directly.
-# The two intentionally differ: the alias chain is the ufo seat cascade, the
-# concrete chain is omp's own retry cascade.
+# concrete selectors for the host flagship lanes. omp resolves a concrete
+# `provider/model:effort` key BEFORE any role key (resolveRetryFallbackChainKey:
+# exact model key, then provider wildcard, then role), so a concrete key
+# SHADOWS the alias sharing its primary — the two must carry identical hops or
+# the seat silently walks the concrete list. A primary shared by several roles
+# carries no concrete key at all (one key cannot hold three cascades); named
+# selection of such a selector falls to the first matching role key in
+# declaration order, which is plan for deepseek-v4.1-flash:max.
 #
 # Effort is granular per bucket via variant aliases (m_mid_med, m_mid_low,
 # m_fast_high); the L1 picks the variant per mission/round/wave. Seat pins use
@@ -88,9 +88,10 @@
 # declared chain key resolves, so the variants stay lean. The effort each
 # variant names is a real one in omp's live catalog AND a legal ufo route
 # suffix — which excludes `minimal` outright. The strong bucket deliberately
-# carries NO variants: the operator quota directive routes it onto
+# carries NO variants: the operator quota directive routed it onto
 # deepseek-v4.1-flash, whose live efforts are only high,max, so its only lower
-# rung (:high) already exists as m_fast_high.
+# rung (:high) already exists as m_fast_high. That still describes m_fast_high;
+# m_strong itself is momentarily on codex gpt-6.1-sol:high.
 #
 # No key material belongs in this file. The resolver screens every line and key
 # it echoes into an error message and redacts anything credential-shaped; the
@@ -101,38 +102,79 @@ setupVersion: 2
 # Larger context windows where supported (the ufo L1 lane needs 1M tokens).
 extendedContext: true
 
+# Catalog scope — only the models the m_* lanes name, on every authenticated
+# provider that serves them. Everything else the bundled catalog carries (deepseek-v4-pro,
+# kimi-for-coding*, the devin fusion family, dated and superseded variants) is hidden from
+# the pickers, cycling and /model. Routing is unaffected: every selector a chain can reach
+# appears below, so no fallback resolves outside this scope.
+enabledModels:
+  - "alibaba-token-plan/deepseek-v4.1-flash"
+  - "alibaba-token-plan/qwen3.8-flash"
+  - "alibaba-token-plan/qwen3.8-max"
+  - "charm-hyper/deepseek-v4.1-flash"
+  - "charm-hyper/glm-5.3"
+  - "charm-hyper/glm-5.3-flash"
+  - "charm-hyper/kimi-k3"
+  - "charm-hyper/qwen3.8-flash"
+  - "charm-hyper/qwen3.8-max"
+  - "cursor/claude-haiku-5-5"
+  - "cursor/claude-haiku-5-5-1m"
+  - "cursor/composer-2.5-fast"
+  - "cursor/cursor-grok-4.5"
+  - "cursor/grok-4.7"
+  - "cursor/kimi-k3"
+  - "devin/claude-haiku-5-5"
+  - "devin/deepseek-v4-1-flash"
+  - "devin/glm-5-3-1m"
+  - "devin/glm-5-3-flash-1m"
+  - "devin/gpt-6-1-sol"
+  - "devin/gpt-6-luna"
+  - "devin/grok-4-5"
+  - "devin/grok-4-7"
+  - "devin/kimi-k3"
+  - "devin/swe-2"
+  - "google-antigravity/gemini-3.8-flash"
+  - "kimi-code/k3"
+  - "kimi-code/kimi-for-coding"
+  - "openai-codex/gpt-6-luna"
+  - "openai-codex/gpt-6.1-sol"
+  - "opencode-go/deepseek-v4.1-flash"
+  - "xai-oauth/grok-4.5"
+  - "xai-oauth/grok-4.7"
+  - "xai-oauth/grok-composer-2.5-fast"
+  - "zai/glm-5.3"
+  - "zai/glm-5.3-flash"
+
 modelRoles:
   # --- omp role selectors ---
-  # default: the m_luna lane (openai-codex gpt-5.6-luna:medium) — operator
-  # directive picked m_luna over deepseek-v4.1 for the everyday default
-  # because codex carries ~99% headroom on this host while the token-plan
-  # quota is the scarce one; flash keeps the alibaba-side lanes and the
-  # fallbacks below. Effort chosen: medium.
-  default: openai-codex/gpt-5.6-luna:medium
+  # default: the m_sol lane (openai-codex gpt-6.1-sol:max) — the 2026-10-10
+  # operator session moved the everyday default onto the codex flagship at its
+  # top effort; codex headroom on this host remains the reason it lives there.
+  default: openai-codex/gpt-6.1-sol:max
   # smol: cheap flash lane per the operator — qwen3.6-flash is out of the pool
   # entirely and the flash bucket runs qwen3.8-flash. Still carries vision, so
   # titles, prewalk and probe work stay on-model.
   smol: alibaba-token-plan/qwen3.8-flash:high
-  # slow: deep-reasoning lane, 1M context and the deepest output budget on the
-  # gateway (384K).
-  slow: alibaba-token-plan/deepseek-v4-pro:max
   # plan: architecture and planning — same flash route as default per the
   # quota directive.
   plan: alibaba-token-plan/deepseek-v4.1-flash:max
   # --- the three ufo buckets, referenced as @name from agentModelOverrides ---
-  # m_strong: the L1, the planner and the critic. Primary is
-  # deepseek-v4.1-flash:max; the qwen3.8-max strong lane (m_qwen38max, below)
-  # leads its cascade. NOTE: the 1M-context declaration for deepseek-v4.1-flash
-  # comes from the kimi-code-side catalog; omp's live row is sparse (no context
-  # metadata), so the l1Context floor is unverifiable from omp — the same
-  # class of gap as the previous 872K L1 that no gate caught.
-  m_strong: alibaba-token-plan/deepseek-v4.1-flash:max
+  # m_strong: the L1, the planner and the critic. MOMENTARY (2026-10-12): the
+  # operator moved this seat onto openai-codex gpt-6.1-sol:high, so its cascade
+  # is the devin twin of that model and nothing else. The deepseek-v4.1-flash
+  # ladder it carried lives on in m_fast and plan; restoring this line and its
+  # chain to alibaba-token-plan/deepseek-v4.1-flash:max brings it back. The
+  # 1M-context caveat that lane carried still applies there: the declaration
+  # comes from the kimi-code-side catalog, omp's live row is sparse (no context
+  # metadata), so the l1Context floor is unverifiable from omp — the same class
+  # of gap as the previous 872K L1 that no gate caught.
+  m_strong: openai-codex/gpt-6.1-sol:high
   # m_qwen38max: the named strong-class lane for qwen3.8-max, back in the pool
   # per the operator (the earlier quota ban is lifted). The live catalog
   # declares efforts low,medium,xhigh — there is no :max rung, so xhigh is the
   # top of this lane. Seats stay on @m_strong; this lane is addressable as
-  # @m_qwen38max for fleet specs and L1 selection, and it leads the m_strong
-  # cascade.
+  # @m_qwen38max for fleet specs and L1 selection. (It used to lead the
+  # m_strong cascade; that bucket is momentarily on codex gpt-6.1-sol.)
   m_qwen38max: alibaba-token-plan/qwen3.8-max:xhigh
   # m_mid: general implementation, review, watch and execute. high is the
   # ceiling omp's live catalog declares for qwen3.8-flash.
@@ -151,38 +193,79 @@ modelRoles:
   # lower rung.
   m_fast_high: alibaba-token-plan/deepseek-v4.1-flash:high
   # --- pool members no seat currently consumes ---
-  # m_luna: the default role's lane, addressable as @m_luna for fleet specs
-  # and L1 selection. openai-codex gpt-5.6-luna carries 1M context at medium
-  # effort; the low and high rungs live in its chain.
-  m_luna: openai-codex/gpt-5.6-luna:medium
   # m_antigravity: the gemini ban's one exemption and the connector seat's
-  # historical family. google-antigravity is not authenticated on this host, so
-  # connector runs on @m_mid instead; the alias and its chain stay declared so
-  # a future OAuth login re-opens the lane with no config edit.
+  # historical family. google-antigravity is authenticated on this host now
+  # (2026-10-11 catalog: 15 models), but the operator's current seat table
+  # still pins connector to @m_mid; the alias and its chain stay declared so
+  # moving the seat is a one-line edit.
   m_antigravity: google-antigravity/gemini-3.8-flash:high
-  # m_composer: the only cursor bucket with quota left — cursor's "Other
-  # Models" monthly budget is exhausted, which kills every non-proprietary
-  # cursor model, so composer stays reachable and the rest do not.
-  m_composer: cursor/composer-2.5:high
+  # m_composer: composer-fast, xai-oauth leading per the operator — its
+  # grok-composer-2.5-fast row is the same 200K-window model under xai's
+  # branding — with cursor as the secondary. The xai row declares no thinking
+  # levels and no image input, so this route carries no effort suffix and an
+  # image-bearing turn must not lead here. cursor's "Other Models" monthly
+  # budget is exhausted, which is why it does not lead.
+  m_composer: xai-oauth/grok-composer-2.5-fast
   # m_swe: the named devin lane. The devin-agent api family declares no
   # efforts at all, so this route carries no effort suffix — the same spelling
   # convention as swe-1-6. Devin is authenticated in omp now (two accounts,
   # Max plan) and the live catalog serves swe-2, so this lane is live. Devin
   # also backs the deepseek/glm-5.3 secondaries across the cascades per the
-  # operator: the devin-hosted twins deepseek-v4-1-flash, deepseek-v4-pro,
+  # operator: the same models on devin — deepseek-v4-1-flash,
   # glm-5-3-1m and glm-5-3-flash-1m lead the hops of the matching alibaba/zai
   # primaries. swe stays out of those lanes — it routes only here.
   m_swe: devin/swe-2
   # --- host flagship lanes: the strongest model per authenticated provider,
   # addressable as @m_k3 / @m_sol / @m_glm53 and keyed concretely below ---
   m_k3: kimi-code/k3:max
+  # m_kfc: kimi-for-coding, the kimi lane the operator actually runs (k3 above
+  # stays declared as the provider flagship). kimi-code is the only provider
+  # serving it, so its cascade is the explicit `[]` — no fallback.
+  m_kfc: kimi-code/kimi-for-coding:high
   m_sol: openai-codex/gpt-6.1-sol:max
   m_glm53: zai/glm-5.3:max
   # m_grok: plain pool member, NOT a flagship — the operator classifies grok
   # below flagship grade. Both grok-4.20 variants are excluded from routing
   # (multi-agent and reasoning alike), so the lane sits on grok-4.7 at xhigh,
-  # its top declared effort. The one family step-down lives in its chain.
+  # its top declared effort. Its cascade is the same model on cursor, then devin.
   m_grok: xai-oauth/grok-4.7:xhigh
+  # --- cursor-branch ufo lanes (added 2026-10-11): the model set the
+  # operator ran at ufo-fsd-alpha over the Cursor CLI (the origin.cursor.com
+  # remote, selfrefine waves; seat table mirrored in
+  # crates/ufo-core-runtime/bundled/omp-seat-routing.json on
+  # cursor/selfrefine/*). Each lane is omp-addressable as @name, and each one
+  # owns a provider cascade below — same bare model on every other
+  # authenticated provider that serves it, and nothing else: no cross-model
+  # tail. Alias
+  # names match the branch seat table for continuity. opencode-go sits before
+  # devin in every deepseek-v4.1-flash cascade (wired 2026-10-12); it holds 4
+  # OpenCode Go accounts. ---
+  # m_zfl: zai glm-5.3-flash at max, its top declared effort. The branch ran
+  # glm-5.3-flashx at xhigh on nine seats; the operator substituted
+  # glm-5.3-flash (2026-10-11), which charm-hyper also serves — so unlike
+  # flashx this lane has a real provider cascade: the same model on
+  # charm-hyper leads it.
+  m_zfl: zai/glm-5.3-flash:max
+  # m_flash: deepseek-v4.1-flash at max — the model's one lane.
+  # alibaba-token-plan leads per the operator, then the same model on
+  # opencode-go (4 OpenCode Go accounts behind the one provider id,
+  # round-robined by omp the way the alibaba token-plan accounts are), then
+  # devin.
+  m_flash: alibaba-token-plan/deepseek-v4.1-flash:max
+  # m_luna: gpt-6-luna at max, its top effort — a lane the operator runs.
+  # devin serves the same bare model, so its cascade opens there.
+  m_luna: openai-codex/gpt-6-luna:max
+  # m_grok45: the branch's cheap grok hop, promoted to a lane at :high, its
+  # top declared effort on xai-oauth. Cursor and devin serve the same bare
+  # model, so its cascade is those two providers.
+  m_grok45: xai-oauth/grok-4.5:high
+  # m_haiku: the cheap-fast anthropic lane (2026-10-11). Two providers serve
+  # plain claude-haiku-5-5: devin (1M context) and cursor (300K and 1M
+  # variants). devin leads because the cursor "Other Models" monthly budget
+  # was exhausted as of the m_composer note — the cursor hops are the
+  # provider redundancy, live the moment that budget resets. Effort :high:
+  # haiku is chosen for velocity, so the lane sits one rung under its top.
+  m_haiku: devin/claude-haiku-5-5:high
 
 task:
   # Thirty-two concurrent subagents — omp's own default, set explicitly per
@@ -213,8 +296,9 @@ task:
   #
   # reviewer and revenger are promoted to @m_mid here: both are thinking-class
   # roles on a thinkingMs deadline and were under-provisioned on the old fast
-  # family. connector joins them on @m_mid because google-antigravity is not
-  # authenticated on this host.
+  # family. connector joins them on @m_mid per the operator's current seat
+  # table (google-antigravity is authenticated now; moving connector onto it
+  # is an operator decision, not a config default).
   #
   # main MUST stay "@m_strong": build.rs refuses to compile unless
   # seats.main.alias equals sighting.dispatch.missionFormat.l1Alias, and the
@@ -239,182 +323,115 @@ retry:
   modelFallback: true
   fallbackChains:
     # --- omp roles ---
-    # default: the primary is codex luna, so the cascade stays in the codex
-    # family first, steps to the token-plan quota lane, then zai, then the
-    # kimi terminal. No preview lane: qwen3.8-max-preview is absent from the
-    # live catalog, so this chain starts one hop deeper than the design
-    # draft did.
+    # default: primary gpt-6.1-sol:max; the cascade is the same bare model on
+    # devin and nothing else.
     default:
-      - "openai-codex/gpt-6-luna:high"
-      - "alibaba-token-plan/deepseek-v4.1-flash:max"
-      - "devin/glm-5-3-flash-1m:low"
-      - "kimi-code/kimi-for-coding-highspeed:low"
+      - "devin/gpt-6-1-sol:max"
     # smol: the cheap and vision-capable end of the pool. qwen3.6-flash is
-    # banned per the operator; the qwen3.8-max hop at :low is the strong-model
-    # cheap rung (xhigh is its top, low its floor). The terminal hop is
-    # kimi-for-coding-highspeed at :low rather than :minimal — omp offers
-    # minimal on that model, but minimal is not a legal ufo route suffix and
-    # this file holds every chain to the seat-grade rule, so low is the floor.
+    # banned per the operator; charm-hyper serves the same qwen3.8-flash, so
+    # the cascade is charm-hyper.
     smol:
-      - "alibaba-token-plan/qwen3.8-max:low"
-      - "alibaba-token-plan/qwen3.7-plus:high"
-      - "devin/glm-5-3-flash-1m:low"
-      - "zai/glm-5v-turbo:high"
-      - "zai/glm-4.6v-flash:high"
-      - "kimi-code/kimi-for-coding-highspeed:low"
-    # slow: leave the family immediately — but the devin-hosted twin of the
-    # primary leads the secondaries per the operator. deepseek-v4-pro declares
-    # only high and max on alibaba, so the only same-model step-down there is
-    # :high — and that repeats the primary's bare model, which the compile
-    # gate calls a wrap. The step is omitted rather than exempted. First hop
-    # after the devin twin is the qwen3.8-max strong lane at its top declared
-    # effort (xhigh).
-    slow:
-      - "devin/deepseek-v4-pro:max"
-      - "alibaba-token-plan/qwen3.8-max:xhigh"
-      - "alibaba-token-plan/glm-5.2:max"
-      - "openai-codex/gpt-5.6-sol:max"
-      - "openai-codex/gpt-6.1-sol:max"
-      - "zai/glm-5.3:max"
-      - "kimi-code/k3:max"
-    # plan: architecture cascade — the devin-hosted twin of the deepseek
-    # family leads the secondaries per the operator (devin is the preferred
-    # secondary provider for deepseek and glm-5.3/glm-5.3-flash), then one
-    # deep alibaba hop, the codex frontier, the zai flagship, the kimi
-    # terminal.
+      - "charm-hyper/qwen3.8-flash:high"
+    # plan: architecture cascade — the same model on devin then charm, and
+    # nothing else.
     plan:
+      - "opencode-go/deepseek-v4.1-flash:max"
       - "devin/deepseek-v4-1-flash:max"
-      - "alibaba-token-plan/deepseek-v4-pro:max"
-      - "openai-codex/gpt-5.6-terra:max"
-      - "zai/glm-5.3:high"
-      - "kimi-code/kimi-for-coding:high"
+      - "charm-hyper/deepseek-v4.1-flash:max"
 
     # --- ufo seat bucket chains: these three are the ones the compile gate
     # validates, so each is non-empty, carries pairwise-distinct bare models,
     # and never repeats its own primary at another effort ---
-    # m_strong: primary alibaba-token-plan/deepseek-v4.1-flash:max. The first
-    # secondary is the devin-hosted twin of the family per the operator, then
-    # the qwen3.8-max strong lane the operator brought back, then the rest of
-    # the authenticated cascade. The google-antigravity hop costs one provider
-    # error until that OAuth login happens; it sits behind seven
-    # authenticated hops.
+    # m_strong: primary openai-codex/gpt-6.1-sol:high (MOMENTARY, 2026-10-12).
+    # The cascade is the devin twin of that model; the deepseek ladder this
+    # bucket used to walk is still declared on m_fast and plan.
     m_strong:
-      - "devin/deepseek-v4-1-flash:max"
-      - "alibaba-token-plan/qwen3.8-max:xhigh"
-      - "alibaba-token-plan/deepseek-v4-pro:max"
-      - "alibaba-token-plan/glm-5.2:max"
-      - "openai-codex/gpt-5.6-sol:max"
-      - "openai-codex/gpt-5.6-terra:max"
-      - "zai/glm-5.3:max"
-      - "google-antigravity/claude-opus-5-5:high"
-      - "kimi-code/k3:max"
+      - "devin/gpt-6-1-sol:high"
     # m_qwen38max: primary alibaba-token-plan/qwen3.8-max:xhigh — the named
-    # strong-class lane. Same cascade shape as m_strong minus the self hop and
-    # the devin hop (the operator scoped devin to the deepseek/zai primaries).
+    # strong-class lane. charm-hyper serves the same bare model; the operator
+    # scoped devin to the deepseek/zai primaries, so charm-hyper is the
+    # whole cascade.
     m_qwen38max:
-      - "alibaba-token-plan/deepseek-v4-pro:max"
-      - "alibaba-token-plan/glm-5.2:max"
-      - "openai-codex/gpt-5.6-sol:max"
-      - "openai-codex/gpt-5.6-terra:max"
-      - "zai/glm-5.3:max"
-      - "google-antigravity/claude-opus-5-5:high"
-      - "kimi-code/k3:max"
+      - "charm-hyper/qwen3.8-max:xhigh"
     # m_mid: primary alibaba-token-plan/qwen3.8-flash:high.
     m_mid:
-      - "alibaba-token-plan/qwen3.7-plus:high"
-      - "alibaba-token-plan/glm-5.2:high"
-      - "openai-codex/gpt-5.6-luna:medium"
-      - "devin/glm-5-3-flash-1m:high"
-      - "cursor/composer-2.5:high"
-      - "kimi-code/kimi-for-coding:high"
+      - "charm-hyper/qwen3.8-flash:high"
     # m_fast: primary alibaba-token-plan/deepseek-v4.1-flash:max. The first
-    # secondary is the devin-hosted twin of the family per the operator.
+    # secondary is the same model on devin per the operator.
     m_fast:
+      - "opencode-go/deepseek-v4.1-flash:max"
       - "devin/deepseek-v4-1-flash:max"
-      - "alibaba-token-plan/qwen3.8-flash:high"
-      - "devin/glm-5-3-flash-1m:low"
-      - "zai/glm-4.7-flash:medium"
-      - "openai-codex/gpt-5.6-luna:low"
-      - "kimi-code/kimi-for-coding-highspeed:low"
-    # m_luna: primary openai-codex/gpt-5.6-luna:medium — codex family first,
-    # then the token-plan quota lane, then zai, then the kimi terminal.
-    m_luna:
-      - "openai-codex/gpt-6-luna:high"
-      - "alibaba-token-plan/deepseek-v4.1-flash:max"
-      - "devin/glm-5-3-flash-1m:low"
-      - "kimi-code/kimi-for-coding-highspeed:low"
-
+      - "charm-hyper/deepseek-v4.1-flash:max"
     # --- effort-variant chains: each reuses its bucket's hop sequence
     # byte-for-byte. Only the primary's effort differs, so a variant stays
     # compile-legal even if a future seat pins to one: the primary's bare
     # model still collides with none of the hops. The strong bucket has no
     # variant chains: deepseek-v4.1-flash's only lower rung (:high) already
     # exists as m_fast_high, and the m_qwen38max lane covers the strong class
-    # at its top effort. ---
+    # at its top effort. m_strong is momentarily off that family entirely, so
+    # its chain below is the codex twin instead. ---
     m_mid_med:
-      - "alibaba-token-plan/qwen3.7-plus:high"
-      - "alibaba-token-plan/glm-5.2:high"
-      - "openai-codex/gpt-5.6-luna:medium"
-      - "devin/glm-5-3-flash-1m:high"
-      - "cursor/composer-2.5:high"
-      - "kimi-code/kimi-for-coding:high"
+      - "charm-hyper/qwen3.8-flash:high"
     m_mid_low:
-      - "alibaba-token-plan/qwen3.7-plus:high"
-      - "alibaba-token-plan/glm-5.2:high"
-      - "openai-codex/gpt-5.6-luna:medium"
-      - "devin/glm-5-3-flash-1m:high"
-      - "cursor/composer-2.5:high"
-      - "kimi-code/kimi-for-coding:high"
+      - "charm-hyper/qwen3.8-flash:high"
     # m_fast_high: variant chain reuses the m_fast hop sequence byte-for-byte,
-    # devin twin included.
+    # devin hop included.
     m_fast_high:
+      - "opencode-go/deepseek-v4.1-flash:max"
       - "devin/deepseek-v4-1-flash:max"
-      - "alibaba-token-plan/qwen3.8-flash:high"
-      - "devin/glm-5-3-flash-1m:low"
-      - "zai/glm-4.7-flash:medium"
-      - "openai-codex/gpt-5.6-luna:low"
-      - "kimi-code/kimi-for-coding-highspeed:low"
+      - "charm-hyper/deepseek-v4.1-flash:max"
 
     # --- pool-member chains: declared so each alias is reachable, consumed by
     # no seat today. alibaba glm-5.3 is deliberately absent from every chain —
-    # the live catalog declares no efforts for it, so glm-5.3 hops go to zai
-    # and glm-5.2 hops go to alibaba ---
-    m_antigravity:
-      - "google-antigravity/claude-opus-5-5:high"
-      - "google-antigravity/gemini-3.1-pro:high"
-      - "google-antigravity/gemini-3.6-flash:medium"
-      - "alibaba-token-plan/qwen3.8-flash:medium"
-      - "kimi-code/kimi-for-coding:high"
+    # the live catalog declares no efforts for it ---
+    m_antigravity: []
     m_composer:
       - "cursor/composer-2.5-fast:high"
-      - "cursor/cursor-grok-4.6:high"
-    m_swe:
-      - "devin/swe-1-6"
-      - "devin/swe-1-6-fast"
+    m_swe: []
     m_k3:
-      - "kimi-code/k3-256k:max"
-      - "kimi-code/kimi-for-coding:max"
-      - "kimi-code/kimi-k2.5:high"
+      - "devin/kimi-k3:max"
+      - "charm-hyper/kimi-k3:max"
+      - "cursor/kimi-k3:max"
+    m_kfc: []
     m_sol:
-      - "openai-codex/gpt-6-sol:max"
-      - "openai-codex/gpt-6-astra:max"
-      - "openai-codex/gpt-5.6-sol:max"
-      - "openai-codex/gpt-daybreak-blue-latest:max"
+      - "devin/gpt-6-1-sol:max"
     m_glm53:
+      - "charm-hyper/glm-5.3:max"
       - "devin/glm-5-3-1m:max"
-      - "zai/glm-5.2:max"
-      - "zai/glm-5.1:high"
-      - "zai/glm-5:high"
-      - "zai/glm-4.7:high"
-      - "alibaba-token-plan/glm-5.2:max"
-    # m_grok: one family step-down (grok-4.6:high), then out to codex, zai and
-    # the kimi terminal. Both grok-4.20 variants are excluded from routing per
-    # the operator.
+    # m_grok: the same bare model on cursor, then devin.
+    # Both grok-4.20 variants are excluded from routing per the operator.
     m_grok:
-      - "xai-oauth/grok-4.6:high"
-      - "openai-codex/gpt-5.6-luna:medium"
-      - "devin/glm-5-3-flash-1m:low"
-      - "kimi-code/kimi-for-coding:high"
+      - "cursor/grok-4.7:xhigh"
+      - "devin/grok-4-7:xhigh"
+
+    # --- cursor-branch lane chains (2026-10-11): provider cascades for the
+    # models the operator ran at ufo-fsd-alpha on the Cursor CLI. Each carries
+    # every OTHER authenticated provider serving the same bare model and
+    # nothing else — a provider outage steps across, capability intact.
+    # Single-provider models (gemini-3.8-flash, swe-2, kimi-for-coding) have
+    # no same-model hop to open on, so their chains are the explicit `[]`: no
+    # fallback at all. gemini hops stay google-antigravity-only (the splitRoute
+    # gate refuses cursor's gemini copies). opencode-go sits before devin in
+    # every deepseek-v4.1-flash cascade. Alias chains and
+    # concrete keys carry identical hops, matching
+    # the m_sol/m_glm53/m_grok convention above ---
+    m_zfl:
+      - "charm-hyper/glm-5.3-flash:max"
+      - "devin/glm-5-3-flash-1m:max"
+    m_flash:
+      - "opencode-go/deepseek-v4.1-flash:max"
+      - "devin/deepseek-v4-1-flash:max"
+    m_luna:
+      - "devin/gpt-6-luna:max"
+    m_grok45:
+      - "cursor/cursor-grok-4.5:high"
+      - "devin/grok-4-5:high"
+    # m_haiku: provider cascade across both haiku-5.5 providers — cursor's
+    # 1M variant first (same model, second provider), then its 300K sibling,
+    # then the standard cheap tail.
+    m_haiku:
+      - "cursor/claude-haiku-5-5-1m:high"
+      - "cursor/claude-haiku-5-5:high"
 
     # --- host flagship lanes, keyed by concrete selector so the cascade
     # applies whether the model was picked as @m_k3 or by name. Each of these
@@ -424,68 +441,40 @@ retry:
     # identically or the whole file fails to load. The three effort-variant
     # values deliberately have NO concrete key — the rule constrains declared
     # chain keys, not modelRoles values, so omitting them keeps the file lean
-    # without making anything dead weight. Four aliases (default, plan,
-    # m_strong and m_fast) share the deepseek-v4.1-flash:max value after the
-    # quota directive, so one concrete key serves all four ---
-    "alibaba-token-plan/qwen3.8-flash:high":
-      - "alibaba-token-plan/qwen3.7-plus:high"
-      - "openai-codex/gpt-5.6-luna:medium"
-      - "devin/glm-5-3-flash-1m:high"
-      - "kimi-code/kimi-for-coding:high"
-    "alibaba-token-plan/deepseek-v4.1-flash:max":
-      - "devin/deepseek-v4-1-flash:max"
-      - "alibaba-token-plan/qwen3.8-flash:high"
-      - "devin/glm-5-3-flash-1m:low"
-      - "openai-codex/gpt-5.6-luna:low"
-      - "kimi-code/kimi-for-coding-highspeed:low"
-    "openai-codex/gpt-5.6-luna:medium":
-      - "openai-codex/gpt-6-luna:high"
-      - "alibaba-token-plan/deepseek-v4.1-flash:max"
-      - "devin/glm-5-3-flash-1m:low"
-      - "kimi-code/kimi-for-coding-highspeed:low"
-    "alibaba-token-plan/deepseek-v4-pro:max":
-      - "devin/deepseek-v4-pro:max"
-      - "alibaba-token-plan/glm-5.2:max"
-      - "openai-codex/gpt-5.6-sol:max"
-      - "zai/glm-5.3:max"
-      - "kimi-code/k3:max"
-    "google-antigravity/gemini-3.8-flash:high":
-      - "google-antigravity/claude-opus-5-5:high"
-      - "alibaba-token-plan/qwen3.8-flash:medium"
-      - "kimi-code/kimi-for-coding:high"
-    "cursor/composer-2.5:high":
+    # without making anything dead weight. A value shared by several roles —
+    # default+m_sol on gpt-6.1-sol:max, plan+m_fast on deepseek-v4.1-flash:max,
+    # smol+m_mid on qwen3.8-flash:high — deliberately has NO concrete key: a
+    # concrete key shadows every alias sharing that primary, and one key cannot
+    # carry three different cascades. Of the four cursor-branch lanes (m_zfl,
+    # m_flash, m_luna, m_grok45) three own one key below; m_flash cannot,
+    # because its primary is the selector plan and m_fast already share. ---
+    "google-antigravity/gemini-3.8-flash:high": []
+    "xai-oauth/grok-composer-2.5-fast":
       - "cursor/composer-2.5-fast:high"
-      - "cursor/cursor-grok-4.6:high"
-    "devin/swe-2":
-      - "devin/swe-1-6"
-      - "devin/swe-1-6-fast"
+    "devin/swe-2": []
     "kimi-code/k3:max":
-      - "kimi-code/k3-256k:max"
-      - "kimi-code/kimi-for-coding:max"
-      - "kimi-code/kimi-k2.5:high"
-    "openai-codex/gpt-6.1-sol:max":
-      - "openai-codex/gpt-6-sol:max"
-      - "openai-codex/gpt-6-astra:max"
-      - "openai-codex/gpt-5.6-sol:max"
+      - "devin/kimi-k3:max"
+      - "charm-hyper/kimi-k3:max"
+      - "cursor/kimi-k3:max"
     "zai/glm-5.3:max":
+      - "charm-hyper/glm-5.3:max"
       - "devin/glm-5-3-1m:max"
-      - "zai/glm-5.2:max"
-      - "zai/glm-5.1:high"
-      - "zai/glm-5:high"
-      - "alibaba-token-plan/glm-5.2:max"
     "xai-oauth/grok-4.7:xhigh":
-      - "xai-oauth/grok-4.6:high"
-      - "openai-codex/gpt-5.6-luna:medium"
-      - "devin/glm-5-3-flash-1m:low"
-      - "kimi-code/kimi-for-coding:high"
+      - "cursor/grok-4.7:xhigh"
+      - "devin/grok-4-7:xhigh"
     "alibaba-token-plan/qwen3.8-max:xhigh":
-      - "alibaba-token-plan/deepseek-v4-pro:max"
-      - "alibaba-token-plan/glm-5.2:max"
-      - "openai-codex/gpt-5.6-sol:max"
-      - "openai-codex/gpt-5.6-terra:max"
-      - "zai/glm-5.3:max"
-      - "google-antigravity/claude-opus-5-5:high"
-      - "kimi-code/k3:max"
+      - "charm-hyper/qwen3.8-max:xhigh"
+    "zai/glm-5.3-flash:max":
+      - "charm-hyper/glm-5.3-flash:max"
+      - "devin/glm-5-3-flash-1m:max"
+    "openai-codex/gpt-6-luna:max":
+      - "devin/gpt-6-luna:max"
+    "xai-oauth/grok-4.5:high":
+      - "cursor/cursor-grok-4.5:high"
+      - "devin/grok-4-5:high"
+    "devin/claude-haiku-5-5:high":
+      - "cursor/claude-haiku-5-5-1m:high"
+      - "cursor/claude-haiku-5-5:high"
 
 dev:
   autoqaConsent: granted
