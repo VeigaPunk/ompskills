@@ -88,8 +88,9 @@ Sources of truth (exact paths — read them, never restate from memory):
 - **The live global config** `/home/vgpnk/.omp/agent/config.yml` — read it, never freeze it;
   quote any value with the date you read it.
 - **The global user skill root** `/home/vgpnk/.agents/skills` and the **project skill roots**
-  `.omp/skills/` (repo-relative) — the repo carries `shokunin`, `swarm`, `tower`; the global
-  root carries `godspeed`, `omarchy`; the substrate's copies differ byte-wise.
+  `.omp/skills/` (repo-relative) — the repo carries top-level `shokunin` and `tower`,
+  with `swarm` explicitly loaded from `tower/swarm/SKILL.md`; the global root carries
+  `godspeed`, `omarchy`; the substrate's copies differ byte-wise.
 - **The compiled bundle** `/home/vgpnk/.local/bin/omp` — read-only string/byte probes only
   (`grep -a`, `strings`); it embeds the original `// packages/coding-agent/src/<file>` path
   comments, so file attribution is exact while identifiers are minified.

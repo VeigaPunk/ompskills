@@ -1,6 +1,5 @@
 /skill:tower
 /skill:godspeed
-/skill:swarm
 
 # Tower fleet L1 — `{{missionId}}` · axis `{{axis}}`
 
@@ -19,7 +18,9 @@ slash command), read them explicitly, in this order:
 
 1. `skill://tower` — the worktree and dispatch discipline you are running.
 2. `skill://godspeed` — the iteration posture.
-3. `skill://swarm` — the wave validator contract and lane shape.
+3. `.omp/skills/tower/swarm/SKILL.md` — the bundled wave validator contract and
+   lane shape. Read this file explicitly: OMP discovers the `tower` parent, not
+   nested sub-skills. Fleet specs copy the complete bundle with `skills: ["tower"]`.
 4. `skill://wwkd` — the planner stance behind step 1 of the round loop. Your
    worktree carries only the skills the repo tracks or the fleet spec names, so
    this URI may not resolve; step 1 restates the stance, so a missing URI is

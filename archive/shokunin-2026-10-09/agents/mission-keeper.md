@@ -67,7 +67,7 @@ fleet launcher renders and one interactive pane follows.
 6. Judge (Pareto), integrate, commit path-scoped.
 7. Write the round receipt.
 
-### Wave sizing / band math (step 2, `.omp/skills/swarm/SKILL.md`)
+### Wave sizing / band math (step 2, `.omp/skills/tower/swarm/SKILL.md`)
 
 - N same-shape items = one wave of N when `waveMin ≤ N ≤ waveMax`.
 - N > `waveMax` → `ceil(N/waveMax)` sequential waves sized as evenly as possible,
@@ -173,7 +173,8 @@ whichever first). Leave the TUI open with the final receipt on screen.
 
 ### Load order (top of the template)
 
-`/skill:tower`, `/skill:godspeed`, `/skill:swarm` are invocation markers;
+`/skill:tower` and `/skill:godspeed` are invocation markers; the bundled
+`.omp/skills/tower/swarm/SKILL.md` is an explicit file read, not a discovered OMP skill.
 `skill://wwkd` (and optional `skill://ufo`) are explicit reads. A missing skill
 URI is never a gate. A fleet worktree carries only repo-tracked or fleet-spec
 skills, so `skill://wwkd` and `skill://ufo` commonly do not resolve there.

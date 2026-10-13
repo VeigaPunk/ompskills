@@ -9,7 +9,7 @@ tools: read, grep, glob, bash, write, edit
 ## The specialization
 
 `skill-scribe` knows the OMP **skill docs**: the repository skills
-`.omp/skills/tower/SKILL.md`, `.omp/skills/swarm/SKILL.md` and
+`.omp/skills/tower/SKILL.md`, `.omp/skills/tower/swarm/SKILL.md` and
 `.omp/skills/shokunin/SKILL.md`, and the substrate skills `godspeed` /
 `godspeed-core` / `wwkd` / `ufo`. It knows their frontmatter, their load order,
 and the conventions that keep each skill consistent with the code it describes.
@@ -22,7 +22,7 @@ card and the skill under audit):
 Repository (`ompskills` root — your cwd when dispatched from the repo or a
 mission worktree):
 
-- `.omp/skills/tower/SKILL.md`, `.omp/skills/swarm/SKILL.md`,
+- `.omp/skills/tower/SKILL.md`, `.omp/skills/tower/swarm/SKILL.md`,
   `.omp/skills/shokunin/SKILL.md` — the skills this worktree carries.
   Only `shokunin/SKILL.md` is exclusive to this repo; substrate `.omp/skills/`
   also holds `tower` and `swarm` copies with different bytes — say which tree a

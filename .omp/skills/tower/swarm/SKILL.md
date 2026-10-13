@@ -1,25 +1,35 @@
 ---
 name: swarm
 description: >
-  Kimi-style swarm toggle and bounded parallel task waves for OMP. Uses the
-  repository wave validator, one batched task call per wave, and global OMP
-  role routing; never mutates routing configuration or turns child tasks into
-  UFO Sighting missions.
+  Kimi-style swarm toggle and bounded parallel task waves for OMP and Devin
+  CLI. Uses the repository wave validator, one batched dispatch per wave (an
+  OMP task call, or one same-response run_subagent batch on Devin), and the
+  host's configured routing; never mutates routing configuration or turns
+  child tasks into UFO Sighting missions.
 metadata:
   axis_family: orchestration
   language: match-repo
-  substrate: omp
+  substrate: omp, devin
 ---
 
-# `/swarm` — OMP session mode and task waves
+# `swarm` — session mode and task waves (OMP, Devin)
 
-Invoke as `/skill:swarm`, `/swarm on`, `/swarm off`, or `/swarm <task>`.
+Two entry points, one file. Standalone: `/swarm on|off|<task>` (OMP
+`/skill:swarm`, Devin `/swarm`) through the `~/.agents/skills/swarm` link.
+From the `tower` bundle: Kimi CLI loads it as `/tower.swarm on|off|<task>`;
+OMP invokes `/tower swarm on|off|<task>`, and the tower parent reads this file
+because neither OMP nor Devin recursively discovers skills. Every
+`/tower swarm X` below is equally `/swarm X`. The validator lives in the
+UFO-FSD checkout: run it from `$UFO_ROOT`, else `~/Projects/ufo-fsd-alpha`;
+without that checkout there is no validator, so execute directly or plan only,
+and say which.
 
 ## Session toggle
 
-- `/swarm on` enables swarm-wave behavior for this conversation only; confirm
-  the session state. `/swarm off` disables it and confirm. This is
-  conversational state only: do not write OMP configuration or claim a
+- `/tower swarm on` (Kimi CLI: `/tower.swarm on`) enables swarm-wave behavior
+  for this conversation only; confirm the session state. `/tower swarm off`
+  (`/tower.swarm off`) disables it and confirm. This is conversational state
+  only: do not write OMP configuration or claim a
   persistent toggle API. The toggle never makes a wave the orchestrator — a
   wave stays a dispatch shape for independent, unjudged work, not a session
   mode with authority over the parent.
@@ -29,8 +39,9 @@ Invoke as `/skill:swarm`, `/swarm on`, `/swarm off`, or `/swarm <task>`.
   set, one-off task, overlapping edits, work requiring one shared writer, or any
   request that cannot meet the wave validator's shape and bounds. Never split a
   wave into several `task` calls to evade a refusal.
-- `/swarm <task>` requests one wave attempt; `/skill:swarm` without a task
-  explains the toggle and asks for an actionable task specification. Never
+- `/tower swarm <task>` (Kimi CLI: `/tower.swarm <task>`) requests one wave
+  attempt; loading this skill without a task explains the toggle and asks for
+  an actionable task specification. Never
   manufacture work or split one user's task into artificial lanes merely to hit
   the minimum. Size to the work inside the band: N same-shape items are one wave
   of N when the band admits N, sequential waves of at most the ceiling when N
@@ -56,6 +67,21 @@ Invoke as `/skill:swarm`, `/swarm on`, `/swarm off`, or `/swarm <task>`.
    `{name, agent, task}` — `agent` is the lane's taxonomy role, `task` its
    composed text, and there is no per-lane model key. Do not invent, omit, or
    rewrite lanes, roles, bindings, or resumes after validation.
+
+   **On Devin** the validated payload is the same; only the plumbing maps.
+   Issue every spawn lane as its own `run_subagent` call, all in **one**
+   response (that response is the wave), each with `is_background: true`,
+   `title` = the lane's `name`, `task` = `taskCall.context`, a blank line,
+   then the lane's `task`, and `profile` = `ufo-<agent>`. If that profile is
+   not installed, use `subagent_explore` for `scout`, `reviewer`, `critic`,
+   `sentinel`, `connector`, and `revenger`, and `subagent_general` for
+   `executor`, `simplifier`, `scribe`, and `mutation-tester`, and say so in
+   the report. The one permitted edit to rendered text: insert the bytes of
+   `~/.agents/skills/godspeed/directive.md` directly after each task's
+   leading `/skill:godspeed` line, because Devin injects nothing. A
+   `resumeSends` entry becomes `run_subagent` with `resume: <entry.resume>`
+   and `task: <entry.message>`, unprefixed. Feed the returned agent ids to
+   `record --assignments`. Never pass a model.
 3. Integrate and report only observed results. Workers advise the parent; keep
    one L1, no second judge, honest evidence, and no concurrent overlapping-file
    assignments. Wave output is advisory: no lane becomes a judge verdict.
@@ -86,6 +112,12 @@ the task call returns ids, `record` adds `conflicting_assignment`,
 refusals (`invalid_registry`, `invalid_registry_path`, `invalid_assignments`).
 A refusal is a reason to fix the spec or execute the work directly, never a
 reason to bypass validation.
+
+Devin uses the same live band unchanged (operator choice). Its
+`nativeProfiles.devin-native-v1.concurrencyCeiling` in `config/ufo.json` is
+how many lanes run at once, not a wave gate: never re-split a validated wave
+to fit it. A lane Devin fails to start or that dies is a dead lane — reported
+as such (I3) — not a reason to respawn it under a new identity.
 
 Each new spawn carries one explicit taxonomy role: `scout`, `reviewer`,
 `critic`, `connector`, `sentinel`, `executor`, `mutation-tester`, `revenger`,
@@ -156,6 +188,12 @@ does not widen the lane's scope, let it judge, or let it spawn.
   carrying more than one lane as `singleFamily` (roles with no seat override
   are reported unpinned and never attributed), so you can split it or record the
   accepted risk; never edit or override global routing from this skill.
+- On Devin there is no alias table: the lane's `ufo-<role>` profile carries
+  no `model:` and runs on Devin's default subagent model, while the
+  `subagent_general` fallback runs on the parent's model (a full wave of it
+  multiplies premium spend — say so before dispatch). `--route-families`
+  resolves OMP routes only and says nothing about Devin lanes; do not cite it
+  as Devin route evidence.
 - Use `scripts/ufo-sighting open` to open the operator wall (tmux session
   `ufo_sighting`, window 1); `status [--lite]` and `overview [--watch]` to
   inspect it; `peek --mission <id> [--lines N]` to read a pane back;
@@ -163,7 +201,7 @@ does not widen the lane's scope, let it judge, or let it spawn.
   `complete --mission <id> [--note <text>]` to retire a registered mission.
   These are UFO Sighting display and interaction controls for registered
   missions, not swarm orchestration: the wall itself never dispatches, judges,
-  or owns a wave. A `task` worker or swarm lane is **not** automatically a wall
+  or owns a wave. A `task` worker, Devin subagent, or swarm lane is **not** automatically a wall
   mission or titled pane.
 - `launch … --fleet NAME ... -- <command>` opens a separate tmux window named
   after that fleet inside the session, one pane per registered mission — use

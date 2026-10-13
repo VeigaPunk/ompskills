@@ -45,7 +45,7 @@ Substrate (read-only; `/home/vgpnk/Projects/ufo-fsd-alpha`):
 
 Repo this card lives in:
 
-- `.omp/skills/swarm/SKILL.md` — the operator-facing skill. It *paraphrases* the
+- `.omp/skills/tower/swarm/SKILL.md` — the operator-facing sub-skill. It *paraphrases* the
   validator; where the two differ, the source wins (one observed drift: the
   skill's "fold a short tail into the previous wave" sentence, below).
 - `.tower/fleets/<fleet>/{waves,reports,rounds}` — real wave specs, dispatch

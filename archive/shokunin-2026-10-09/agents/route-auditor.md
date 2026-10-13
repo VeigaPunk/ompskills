@@ -53,7 +53,7 @@ Sources of truth (exact paths — read them, never restate from memory):
 - `/home/vgpnk/Projects/ufo-fsd-alpha/scripts/check-routing-free-config.mjs`
 - `/home/vgpnk/Projects/ufo-fsd-alpha/scripts/ufo-swarm-wave.mjs` and `ufo-route-preflight.mjs`
 - `/home/vgpnk/Projects/ufo-fsd-alpha/crates/ufo-core-runtime/build.rs` and `crates/ufo-core-runtime/bundled/omp-seat-routing.json`
-- `.omp/skills/swarm/SKILL.md`, `.omp/skills/tower/SKILL.md`, `sighting/l1-prompt.md`
+- `.omp/skills/tower/swarm/SKILL.md`, `.omp/skills/tower/SKILL.md`, `sighting/l1-prompt.md`
 
 Questions it answers: which seat resolves to which alias and route, and with what
 chain; is a config value a legal route (grammar, effort whitelist, gemini ban,

@@ -39,11 +39,13 @@
 # would tolerate it; and no chain steps its own primary down to a lower effort.
 #
 # Model pool = the models the m_* lanes name, on the providers authenticated
-# on this host. `enabledModels` below is set to exactly that set: every role
-# value and every chain step appears in it, so nothing a cascade can reach is
-# hidden, and everything else the bundled catalog carries — deepseek-v4-pro,
-# kimi-for-coding*, the devin fusion family, superseded gpt-5.6, dated
-# variants — is out of scope for the pickers, cycling and /model.
+# on this host, plus the operator's standalone Claude Opus 5.5 picks (Cursor,
+# Devin and google-antigravity; no role or chain names them). `enabledModels`
+# below is set to exactly that set: every role value and every chain step
+# appears in it, so nothing a cascade can reach is hidden, and everything else
+# the bundled catalog carries — deepseek-v4-pro, kimi-for-coding*, the devin
+# fusion family, superseded gpt-5.6, dated variants — is out of scope for the
+# pickers, cycling and /model.
 # `enabledProviders` stays unset: it filters discovery sources, not models.
 #
 # The two providers the operator excluded are deliberately absent from this
@@ -102,11 +104,14 @@ setupVersion: 2
 # Larger context windows where supported (the ufo L1 lane needs 1M tokens).
 extendedContext: true
 
-# Catalog scope — only the models the m_* lanes name, on every authenticated
-# provider that serves them. Everything else the bundled catalog carries (deepseek-v4-pro,
-# kimi-for-coding*, the devin fusion family, dated and superseded variants) is hidden from
-# the pickers, cycling and /model. Routing is unaffected: every selector a chain can reach
-# appears below, so no fallback resolves outside this scope.
+# Catalog scope — the models the m_* lanes name, on every authenticated
+# provider that serves them, plus the operator's standalone Claude Opus 5.5
+# picks (Cursor, Devin and google-antigravity; no role or chain names them, so
+# routing is untouched by their presence). Everything else the bundled catalog
+# carries (deepseek-v4-pro, kimi-for-coding*, the devin fusion family, dated and
+# superseded variants) is hidden from the pickers, cycling and /model. Routing is
+# unaffected: every selector a chain can reach appears below, so no fallback
+# resolves outside this scope.
 enabledModels:
   - "alibaba-token-plan/deepseek-v4.1-flash"
   - "alibaba-token-plan/qwen3.8-flash"
@@ -119,11 +124,17 @@ enabledModels:
   - "charm-hyper/qwen3.8-max"
   - "cursor/claude-haiku-5-5"
   - "cursor/claude-haiku-5-5-1m"
+  - "cursor/claude-opus-5-5"
+  - "cursor/claude-opus-5-5-1m"
+  - "cursor/claude-opus-5-5-1m-fast"
+  - "cursor/claude-opus-5-5-fast"
   - "cursor/composer-2.5-fast"
   - "cursor/cursor-grok-4.5"
   - "cursor/grok-4.7"
   - "cursor/kimi-k3"
   - "devin/claude-haiku-5-5"
+  - "devin/claude-opus-5-5"
+  - "devin/claude-opus-5-5-fast"
   - "devin/deepseek-v4-1-flash"
   - "devin/glm-5-3-1m"
   - "devin/glm-5-3-flash-1m"
@@ -133,6 +144,7 @@ enabledModels:
   - "devin/grok-4-7"
   - "devin/kimi-k3"
   - "devin/swe-2"
+  - "google-antigravity/claude-opus-5-5"
   - "google-antigravity/gemini-3.8-flash"
   - "kimi-code/k3"
   - "kimi-code/kimi-for-coding"

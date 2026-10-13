@@ -76,7 +76,7 @@ never repo sources and never commits; the repo paths are the tracked ones.
   the eight gates include the real validator. Measure the band from the merged
   `<ufoRoot>/config/ufo.json`, never from prose or `AGENTS.md`.
 - `sighting/l1-prompt.md` (Tower duties → **Honest evidence**),
-  `.omp/skills/{tower,swarm,shokunin}/SKILL.md` — the honesty rules: *report
+  `.omp/skills/{tower,tower/swarm,shokunin}/SKILL.md` — the honesty rules: *report
   route and evidence provenance exactly; never claim an unrun check passed; never
   fabricate a lane’s output; count what you observed; name refusals by their typed
   code.* These are prose conventions; the skills’ own precedence clause

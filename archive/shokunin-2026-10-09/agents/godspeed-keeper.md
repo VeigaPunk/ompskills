@@ -58,7 +58,7 @@ cwd-scoped — verify them separately.**
 ### The skill a lane actually receives
 
 No project-scope godspeed skill exists in `ompskills` or in this worktree
-(`.omp/skills` holds only `shokunin`, `swarm`, `tower`), so `skill://godspeed`
+(`.omp/skills` holds `shokunin` and the `tower` bundle with its `swarm` child), so `skill://godspeed`
 resolves to the host install, sha256 `1d616723…`, whose body is the directive
 bytes inlined after frontmatter (`tail -n +10 | cmp` → identical). The host
 variant **lacks** the substrate skill's two guards: the trilogy ban (`never
