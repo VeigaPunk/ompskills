@@ -32,9 +32,9 @@ canonical files win; on host mechanics this file wins. If the checkout is
 missing, say so and stay advisory: plan, draft, review — never fabricate a
 round, a verdict, or a spot-check.
 
-The fleet root is `$SHOKUNIN_ROOT`, else `~/Projects/shokunin`: `MISSION.md`
-copy, `shokunin.conf`, `MANIFEST.json`, `.ufo/`, and one git repo per lane at
-`<id>-shokunin/`.
+The fleet root is `$SHOKUNIN_ROOT`, else `~/Projects/shokunin`: its deployment
+`MISSION.md`, `shokunin.conf`, `MANIFEST.json`, `.ufo/`, and one git repo per
+lane at `<id>-shokunin/`. Deployment state does not override canonical rules.
 
 ## Verbs
 
@@ -44,7 +44,7 @@ copy, `shokunin.conf`, `MANIFEST.json`, `.ufo/`, and one git repo per lane at
   "<domain>" --fleet-root "$SHOKUNIN_ROOT"` from the canonical checkout, and
   complete `MINT.md` with the real evidence. The script cannot supply it.
 - `/shokunin round <id>` — dispatch one round for that lane (below) and judge
-  it on its axis and on the three learning trends (`LEARNING.md`).
+  each of its claims on its declared axis and all three learning trends (`LEARNING.md`).
 - `/shokunin teach <id> <lesson>` — write the operator's words verbatim to
   `<id>-shokunin/corpus/lessons/operator-<YYYY-MM-DD>-<slug>.md`, marked
   `author: operator`, and commit only that path. The lane must reflect it in
