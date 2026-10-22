@@ -4,9 +4,9 @@
     "l1Alias": "m_strong"
   },
   "swarm": {
-    "maxLanes": 100,
-    "minLanes": 16,
-    "waveMinLanes": 16,
-    "waveMaxLanes": 32
+    "maxLanes": 256,
+    "minLanes": 32,
+    "waveMinLanes": 32,
+    "waveMaxLanes": 256
   }
 }

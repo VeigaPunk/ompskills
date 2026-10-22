@@ -86,12 +86,12 @@ and say which.
    one L1, no second judge, honest evidence, and no concurrent overlapping-file
    assignments. Wave output is advisory: no lane becomes a judge verdict.
 
-The validator is normative. The configured wave band is **16–32 total members**
+The validator is normative. The configured wave band is **32–256 total members**
 (spawn lanes plus resumes counted together) **per wave**, from
 `sighting.dispatch.swarm.waveMinLanes`/`waveMaxLanes`; the per-L1 member
-ceiling `swarm.maxLanes` is **100** — the round budget that sequential waves of
+ceiling `swarm.maxLanes` is **256** — the round budget that sequential waves of
 one round share, and the cap the validator enforces on any single wave — and a
-per-spec `maxLanes` may only tighten it, never widen it. `swarm.minLanes` **16**
+per-spec `maxLanes` may only tighten it, never widen it. `swarm.minLanes` **32**
 is the declared swarm-round floor — policy, not a planner gate; what the
 planner gates is the wave band, and in a band-less policy the built-in minimum
 is **2**. Both wave-band gates fire only on spawn-bearing waves, so a
@@ -148,8 +148,8 @@ A swarm member is a leaf — no delegation and no background jobs. Omit the
 `spawns:` key entirely for a leaf; `spawns: []` is a footgun, not the leaf
 spelling, because an empty list collapses to undefined and yields a wildcard
 when `task` is in the lane's tools. `agents/executor.md` is the one card that
-permits a spawn (`labrat`), and the host's `task.maxRecursionDepth` (**2**) is
-what bounds that chain. The host's `task.maxConcurrency` (**32**) is a separate
+permits a spawn (`labrat`), and the host's `task.maxRecursionDepth` (**3**) is
+what bounds that chain. The host's `task.maxConcurrency` (**200**) is a separate
 cap on lanes running at once; it is not the wave band and not the member
 ceiling — the host cap bounds how many lanes run at once, never how wide one
 wave may be; the later waves of a full round are dispatched after the earlier

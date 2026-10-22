@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * run-wave-test — the automated half of the ufo-sighting 16-lane wave smoke
+ * run-wave-test — the automated half of the ufo-sighting 32-lane wave smoke
  * test. It proves every claim the live procedure in test/sighting-wave-smoke.md
  * makes about the wave planner, then STOPS at the dispatch boundary and prints
  * the exact step the operator executes by hand.
@@ -12,26 +12,26 @@
  * What it does, in order:
  *   1. preflight   node, tmux, the ufo-fsd-alpha checkout, and `node
  *                  host/apply.mjs` (dry run) exiting 0. The apply gate is
- *                  hard: no verified candidate config, no test. Then the
+ *                  hard: no verified global config, no test. Then the
  *                  authorities: the checkout's own planner module and the seat
- *                  → @alias table resolved from the candidate global config, so
+ *                  → @alias table resolved from the live global config, so
  *                  every role claim below is the repo's resolution, not a
  *                  restated table.
  *   2. band        resolve the swarm band authority — a synthesized post-apply
  *                  fixture config (`--band fixture`, the default, works before
  *                  the apply has landed) or the real config/ufo.json (`--band
  *                  live`, refuses with apply_not_landed while the floor is
- *                  still 32).
- *   3. spec        build the 16-lane wave spec: pairwise-distinct prompts,
+ *                  still 16).
+ *   3. spec        build the 32-lane wave spec: pairwise-distinct prompts,
  *                  explicit taxonomy roles spread over two route families.
  *   4. plan        `ufo-swarm-wave.mjs plan` — exit 0, band, counts, roles.
  *   5. run         `ufo-swarm-wave.mjs run` — the ufo-swarm-wave-dispatch-v1
- *                  payload: 16 spawn lanes, no per-lane model param,
+ *                  payload: 32 spawn lanes, no per-lane model param,
  *                  /skill:godspeed as the leading line of every spawned task,
  *                  registry persisted on disk.
  *   6. negatives   the spawn-wave size matrix, each expected code DERIVED from
  *                  the resolved band (floor-1 refused too_few_lanes; floor and
- *                  wave ceiling admitted; ceiling+1 and the 100-lane cap
+ *                  wave ceiling admitted; ceiling+1 and the 256-lane cap
  *                  refused wave_too_wide; cap+1 too_many_lanes); the per-spec
  *                  cap (below the floor impossible_band, at the ceiling it
  *                  tightens, above the policy cap it is clamped and never
@@ -79,6 +79,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
+import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -86,19 +87,18 @@ const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TEST_DIR, "..");
 const HOST_DIR = path.join(REPO_ROOT, "host");
 const APPLY_SCRIPT = path.join(HOST_DIR, "apply.mjs");
-const CANDIDATE_GLOBAL_CONFIG = path.join(HOST_DIR, "omp-agent.config.yml");
+const GLOBAL_CONFIG = path.join(homedir(), ".omp", "agent", "config.yml");
 const DELTA_PATH = path.join(HOST_DIR, "ufo-sighting-dispatch.json");
 const EVIDENCE_ROOT = path.join(TEST_DIR, "evidence");
 const DEFAULT_UFO_ROOT = "/home/vgpnk/Projects/ufo-fsd-alpha";
 const WAVE_SESSION = "ufo_sighting";
 
-// The operator directive under test: "dispatched in swarms of 16-32, up to
-// 100 per round". 16 is the narrowest legal spawn wave after the apply, so it
-// is the wave this script proves admissible; 15 is the refusal that shows the
-// floor bites, 33 the one that shows the wave ceiling bites, 101 the member
-// cap above the round ceiling.
-const FLOOR_LANES = 16;
-const HARD_CEILING = 100;
+// The operator directive under test: "dispatched in swarms of 32-256, up to
+// 256 per round". 32 is the narrowest legal spawn wave after the apply, so it
+// is the wave this script proves admissible; 31 is the refusal that shows the
+// floor bites, 257 the one that shows the wave ceiling and member cap bite.
+const FLOOR_LANES = 32;
+const HARD_CEILING = 256;
 // Every typed refusal is this envelope on stderr with exit 1 — never the plan
 // schema the admitted path uses. Each code asserted below is checked with it.
 const WAVE_ERROR_SCHEMA = "ufo-swarm-wave-error-v1";
@@ -107,11 +107,11 @@ const WAVE_ERROR_SCHEMA = "ufo-swarm-wave-error-v1";
 // candidate global config at runtime (loadAuthorities), never hardcoded here:
 // on the current candidate scout+scribe+simplifier+mutation-tester resolve to
 // @m_fast and reviewer+executor+connector+sentinel+revenger to @m_mid, so a
-// wave mixing them is not a singleFamily concentration (the all-16-in-one-
-// family and all-32-in-one-family death shapes the route preflight exists to flag).
+// wave mixing them is not a singleFamily concentration (the all-in-one-family
+// death shapes the route preflight exists to flag).
 const MIXED_ROLES = ["scout", "reviewer", "scribe", "executor"];
 // One family only, for the negative singleFamily assertion. Never dispatched.
-const SINGLE_FAMILY_ROLES = ["scout", "scribe", "simplifier", "mutation-tester"];
+const SINGLE_FAMILY_ROLES = ["simplifier", "mutation-tester", "executor", "scribe"];
 
 // Authorities imported from the checkout under test, so every role/family claim
 // in this script is the repo's own resolution rather than a restated table:
@@ -127,14 +127,14 @@ async function loadAuthorities() {
   say("  authorities — the candidate routing table and the real planner");
   waveMod = await import(WAVE_CLI);
   const routingMod = await import(path.join(UFO_SCRIPTS, "omp-global-config.mjs"));
-  const routing = routingMod.readGlobalSeatRouting({ path: CANDIDATE_GLOBAL_CONFIG });
+  const routing = routingMod.readGlobalSeatRouting({ path: GLOBAL_CONFIG });
   seatAlias = new Map([...routing.seats].map(([seat, entry]) => [seat, entry?.via?.alias ?? null]));
-  ok("authority.seats", `${seatAlias.size} seats resolved from the candidate global config ${CANDIDATE_GLOBAL_CONFIG} (sha256 ${routing.sha256.slice(0, 16)}…)`);
+  ok("authority.seats", `${seatAlias.size} seats resolved from the live global config ${GLOBAL_CONFIG} (sha256 ${routing.sha256.slice(0, 16)}…)`);
   const unpinned = [...MIXED_ROLES, ...SINGLE_FAMILY_ROLES].filter((role) => !seatAlias.has(role));
   check("authority.pinned", unpinned.length === 0,
     unpinned.length === 0
       ? `every role this test uses is pinned by task.agentModelOverrides: ${[...new Set([...MIXED_ROLES, ...SINGLE_FAMILY_ROLES])].map((role) => `${role}→@${seatAlias.get(role)}`).join(", ")}`
-      : `these roles are not pinned in the candidate config, so no family can be attributed: ${JSON.stringify(unpinned)}`);
+      : `these roles are not pinned in the global config, so no family can be attributed: ${JSON.stringify(unpinned)}`);
   check("authority.mixedSpansFamilies", new Set(MIXED_ROLES.map((role) => seatAlias.get(role))).size >= 2,
     `MIXED_ROLES spans ${new Set(MIXED_ROLES.map((role) => seatAlias.get(role))).size} aliases: ${JSON.stringify(MIXED_ROLES.map((role) => seatAlias.get(role)))}`);
   check("authority.singleFamilyIsOne", new Set(SINGLE_FAMILY_ROLES.map((role) => seatAlias.get(role))).size === 1,
@@ -164,8 +164,8 @@ const USAGE = [
   "  --ufo-root PATH   ufo-fsd-alpha checkout (default " + DEFAULT_UFO_ROOT + ")",
   "  --band MODE       fixture: synthesize the post-apply band from host/ (default)",
   "                    live: read the checkout's config/ufo.json as the band authority",
-  "                    and refuse with apply_not_landed while the floor is not 16",
-  "  --lanes N         spawn lanes for the admitted wave (default 16, band 16-32)",
+  "                    and refuse with apply_not_landed while the floor is not 32",
+  "  --lanes N         spawn lanes for the admitted wave (default 32, band 32-256)",
   "  --report-dir REL  per-lane reportDir written into the spec (relative, no '..')",
   "  --out DIR         evidence dir (default test/evidence/<stamp>)",
   "  --live-wall       open the operator wall and capture its state. WITHOUT this",
@@ -423,7 +423,7 @@ function preflight() {
     ["preflight.repo.sightingCli", SIGHTING_CLI],
     ["preflight.repo.config", LIVE_CONFIG],
     ["preflight.host.apply", APPLY_SCRIPT],
-    ["preflight.host.candidate", CANDIDATE_GLOBAL_CONFIG],
+    ["preflight.globalConfig", GLOBAL_CONFIG],
     ["preflight.host.delta", DELTA_PATH],
   ]) {
     if (!existsSync(file)) gate(id, `missing required file: ${file}`);
@@ -448,7 +448,7 @@ function preflight() {
   if (apply.status !== 0) {
     gate("preflight.apply", `host/apply.mjs dry run exited ${apply.status} — the candidate config is not verified, so the wave test would measure an unroutable host. Log: ${applyLog}\n  last lines:\n${apply.stdout.trim().split("\n").slice(-6).map((line) => `    ${line}`).join("\n")}`);
   }
-  ok("preflight.apply", `host/apply.mjs dry run exit 0 (resolver, route gate, replicated compile gate and its own 16-32 wave-band gate all pass) — log ${displayPath(applyLog)}`);
+  ok("preflight.apply", `host/apply.mjs dry run exit 0 (resolver, route gate, replicated compile gate and its own 32-256 wave-band gate all pass) — log ${displayPath(applyLog)}`);
 
   return { wallPresent, applyLog };
 }
@@ -717,7 +717,7 @@ function negatives(band, admitted) {
   // The file's own directive constants must agree with the band authority it was
   // handed. The cap half is the load-bearing one (a delta cap tightened to 99
   // flips this check alone); the floor half is backstopped upstream by the apply
-  // dry run's own hardcoded 16-lane probe, which refuses any delta floor other
+  // dry run's own hardcoded 32-lane probe, which refuses any delta floor other
   // than the directive's before section 6 is reached — a floor drift is caught,
   // just earlier and by a different gate.
   check("negative.authorityConstants", FLOOR_LANES === floor && HARD_CEILING === cap,
@@ -725,8 +725,8 @@ function negatives(band, admitted) {
 
   // 6a: the spawn-wave size matrix. Every cell asserts exactly what the band's
   // own arithmetic predicts, so floor, wave ceiling and cap are all pinned by
-  // observation — including 100 lanes, which the wave ceiling refuses even
-  // though it sits exactly on the "up to 100 per round" cap.
+  // observation — cap and wave ceiling coincide under the 32-256 directive,
+  // so a ceiling-lane wave is judged once, by the wave bound.
   const sizeMatrix = [...new Set([floor - 1, floor, floor + 1, ceiling, ceiling + 1, cap, cap + 1])]
     .filter((lanes) => lanes >= 1)
     .sort((a, b) => a - b);
@@ -745,17 +745,18 @@ function negatives(band, admitted) {
 
   // 6b: the per-spec cap. It may only tighten, and it is judged before the wave
   // ceiling — so a cap pinched below the policy ceiling refuses the lane count
-  // as too_many_lanes (the cap is the tighter bound), while a cap declared above
-  // the wave ceiling still refuses the wave as wave_too_wide: the cap never
-  // widens one wave. A cap below the floor makes the band unreachable, and
-  // feasibility is judged before both size checks.
+  // as too_many_lanes, and a cap declared above the ceiling cannot widen the
+  // wave either: when the ceiling and the member cap coincide (the 32-256
+  // band), the same refusal fires as too_many_lanes, and when they diverge a
+  // ceiling+1 wave under the cap is wave_too_wide. A cap below the floor makes
+  // the band unreachable, and feasibility is judged before both size checks.
   const capMatrix = [
     { lanes: floor, maxLanes: floor - 1, code: "impossible_band",
       why: `cap ${floor - 1} < floor ${floor}: no spawn wave can satisfy the band, and feasibility is judged first` },
     { lanes: floor - 1, maxLanes: floor, code: "too_few_lanes",
       why: `cap ${floor} == floor: the band is reachable, so the short lane count is the refusal` },
-    { lanes: ceiling + 1, maxLanes: ceiling + 1, code: "wave_too_wide",
-      why: `a cap declared at ${ceiling + 1} does not widen the wave ceiling: ${ceiling + 1} lanes is still one wave too many` },
+    { lanes: ceiling + 1, maxLanes: ceiling + 1, code: ceiling + 1 > cap ? "too_many_lanes" : "wave_too_wide",
+      why: `a cap declared at ${ceiling + 1} cannot widen the wave: ${ceiling + 1} lanes is refused${ceiling + 1 > cap ? " by the shared ceiling/cap" : " as wave_too_wide"}` },
     { lanes: cap, maxLanes: cap - 1, code: "too_many_lanes",
       why: `a cap tightened to ${cap - 1} refuses the ${cap} lanes the policy cap would have admitted — the cap is judged before the wave ceiling` },
   ];
@@ -814,11 +815,13 @@ function negatives(band, admitted) {
     return spec;
   };
 
-  // The exemption is from the band, never from the cap: below the floor and
-  // above the wave ceiling are both admitted, one lane past the cap is not.
+  // The exemption is from the band, never from the cap: below the floor is
+  // admitted, and one lane past the cap is not. With ceiling == cap, lanes
+  // above the ceiling are already past the cap — too_many_lanes, never an
+  // admitted exemption case.
   const resumeCases = [
     { lanes: floor - 1, admit: true, why: `below the ${floor}-lane floor` },
-    { lanes: ceiling + 1, admit: true, why: `above the ${ceiling}-lane wave ceiling` },
+    { lanes: ceiling + 1, admit: ceiling + 1 <= cap, code: "too_many_lanes", why: `above the ${ceiling}-lane wave ceiling${ceiling + 1 > cap ? ", which is already past the shared cap" : ""}` },
     { lanes: cap + 1, admit: false, code: "too_many_lanes", why: `one lane past the ${cap}-lane cap` },
   ];
   for (const { lanes, admit, code, why } of resumeCases) {
@@ -891,7 +894,7 @@ function negatives(band, admitted) {
   }
 
   // The per-spec cap still binds a resume-only wave, so the exemption is exactly
-  // the 16-32 band and nothing else: cap 1 refuses 2 resume lanes.
+  // the 32-256 band and nothing else: cap 1 refuses 2 resume lanes.
   const capPath = specFile("spec-resume-cap.json", resumeOnlySpec(2, `${WAVE_NAME}-resume-cap`, 1));
   refusal("negative.resume.specCap", planCase("resume-cap.json", capPath, band), "too_many_lanes",
     "a per-spec cap of 1 refuses 2 resume lanes — the cap is not part of the band exemption");
@@ -997,7 +1000,7 @@ function negatives(band, admitted) {
 
 async function routeFamilies(band, admitted) {
   const mod = waveMod;
-  const routingOptions = { path: CANDIDATE_GLOBAL_CONFIG };
+  const routingOptions = { path: GLOBAL_CONFIG };
   const reports = {};
   const ceiling = band.expected.waveMaxLanes;
 
@@ -1024,9 +1027,9 @@ async function routeFamilies(band, admitted) {
   reports.mixed = mixed;
   reports.singleFamily = fast;
   writeEvidenceJson("route-preflight.json", {
-    candidateGlobalConfig: CANDIDATE_GLOBAL_CONFIG,
-    candidateSha256: sha256File(CANDIDATE_GLOBAL_CONFIG),
-    note: "routePreflight against the candidate global config apply.mjs installs. --route-families on the CLI reads the same table through the operator's live ~/.omp/agent/config.yml.",
+    globalConfig: GLOBAL_CONFIG,
+    globalConfigSha256: sha256File(GLOBAL_CONFIG),
+    note: "routePreflight against the live global config, the same table --route-families on the CLI reads.",
     mixedWave: mixed,
     singleFamilyWave: fast,
   });
@@ -1070,15 +1073,15 @@ async function routeFamilies(band, admitted) {
   check("negative.routeUnprobed", mixed.status === "unprobed" && mixed.pings === 0
     && mixed.families.every((family) => family.status === "unprobed"),
     `with no probe the preflight records the sizing snapshot only: status ${JSON.stringify(mixed.status)}, ${mixed.pings} pings, family statuses ${JSON.stringify([...new Set(mixed.families.map((family) => family.status))])} — an absent probe never refuses`);
-  check("negative.routeConfigBound", [mixed, fast].every((report) => report.config?.sha256 === sha256File(CANDIDATE_GLOBAL_CONFIG)),
-    `both reports bind the routing authority they read: ${mixed.config?.path} sha256 ${String(mixed.config?.sha256).slice(0, 16)}… equals the candidate file on disk`);
+  check("negative.routeConfigBound", [mixed, fast].every((report) => report.config?.sha256 === sha256File(GLOBAL_CONFIG)),
+    `both reports bind the routing authority they read: ${mixed.config?.path} sha256 ${String(mixed.config?.sha256).slice(0, 16)}… equals the global config on disk`);
 
   // The operator-facing form of the same checks, proved end to end: the CLI flag
-  // with a fixture HOME holding the candidate config as .omp/agent/config.yml.
-  // A live run needs no override — it reads the installed authority.
+  // with a fixture HOME holding a copy of the live config as .omp/agent/config.yml.
+  // A live run needs no override — it reads the global config directly.
   const fixtureHome = path.join(EVIDENCE, "fixture-home");
   mkdirSync(path.join(fixtureHome, ".omp", "agent"), { recursive: true });
-  copyFileSync(CANDIDATE_GLOBAL_CONFIG, path.join(fixtureHome, ".omp", "agent", "config.yml"));
+  copyFileSync(GLOBAL_CONFIG, path.join(fixtureHome, ".omp", "agent", "config.yml"));
   for (const [id, specPath, wantSingle] of [
     ["negative.routeCliMixed", mixedSpecPath, false],
     ["negative.routeCliSingleFamily", fastSpecPath, true],
@@ -1142,7 +1145,7 @@ async function bandCrossCheck(delta, admitted) {
   // the delta's, not a fixture artifact.
   const matrix = [
     [delta.swarm.waveMinLanes - 1, "too_few_lanes", `one below the delta's floor ${delta.swarm.waveMinLanes}`],
-    [delta.swarm.waveMaxLanes + 1, "wave_too_wide", `one above the delta's wave ceiling ${delta.swarm.waveMaxLanes}`],
+    [delta.swarm.waveMaxLanes + 1, delta.swarm.waveMaxLanes + 1 > delta.swarm.maxLanes ? "too_many_lanes" : "wave_too_wide", `one above the delta's wave ceiling ${delta.swarm.waveMaxLanes}`],
     [delta.swarm.maxLanes + 1, "too_many_lanes", `one above the delta's cap ${delta.swarm.maxLanes}`],
   ];
   for (const [lanes, code, why] of matrix) {
